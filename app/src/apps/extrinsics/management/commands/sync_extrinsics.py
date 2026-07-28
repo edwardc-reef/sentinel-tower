@@ -1,5 +1,4 @@
 import signal
-import time
 
 import structlog
 from django.conf import settings
@@ -8,6 +7,7 @@ from sentinel.v1.providers.base import BlockchainProvider
 from sentinel.v1.providers.bittensor import bittensor_provider
 
 from apps.extrinsics.block_tasks import store_block_extrinsics
+from project.core.services.bittensor_connection import ProviderReconnectBackoff
 
 logger = structlog.get_logger()
 
@@ -24,10 +24,34 @@ class Command(BaseCommand):
         logger.info("Received shutdown signal", signal=sig_name)
         self._shutdown = True
 
-    def _create_provider(self) -> BlockchainProvider:
-        provider = bittensor_provider()
-        provider.__enter__()
-        return provider
+    def _connect_provider(self, reconnect: ProviderReconnectBackoff) -> BlockchainProvider | None:
+        """
+        Open a provider connection, retrying failures with exponential backoff.
+
+        Connecting is itself a network call (a websocket handshake against the chain
+        endpoint) and it is attempted precisely when that endpoint is already misbehaving,
+        so it fails often. Letting the failure escape would kill the daemon, so keep
+        retrying until it succeeds or shutdown is requested. The shared outage state
+        ensures one failure reaches error level after
+        BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS attempts.
+
+        Returns:
+            A connected provider, or None if shutdown was requested before one opened.
+
+        """
+        while not self._shutdown:
+            provider = bittensor_provider()
+            try:
+                provider.__enter__()
+            except Exception:
+                self._close_provider(provider)
+                delay = reconnect.record_failure(logger, "Provider connection failed")
+                reconnect.wait(delay, lambda: self._shutdown)
+                continue
+
+            return provider
+
+        return None
 
     def _close_provider(self, provider: BlockchainProvider) -> None:
         try:
@@ -42,25 +66,40 @@ class Command(BaseCommand):
         self.stdout.write("Starting sync_extrinsics daemon...")
         logger.info("sync_extrinsics daemon starting", poll_interval=settings.BITTENSOR_SECONDS_PER_BLOCK)
 
-        provider = self._create_provider()
+        provider: BlockchainProvider | None = None
         last_processed_block = None
+        reconnect = ProviderReconnectBackoff(
+            initial_delay_seconds=settings.BITTENSOR_RECONNECT_INITIAL_DELAY_SECONDS,
+            max_delay_seconds=settings.BITTENSOR_RECONNECT_MAX_DELAY_SECONDS,
+            alert_after_attempts=settings.BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS,
+        )
 
         try:
             while not self._shutdown:
+                # A dropped provider is reopened here, so every reconnect goes through the
+                # same retrying code path.
+                if provider is None:
+                    provider = self._connect_provider(reconnect)
+                    if provider is None:
+                        break
+
                 try:
                     head = provider.get_current_block()
                 except Exception:
-                    logger.warning("Connection error fetching head, reconnecting...", exc_info=True)
                     self._close_provider(provider)
-                    provider = self._create_provider()
+                    provider = None
+                    delay = reconnect.record_failure(logger, "Connection error fetching head, reconnecting...")
+                    reconnect.wait(delay, lambda: self._shutdown)
                     continue
+
+                reconnect.record_recovery(logger)
 
                 if last_processed_block is None:
                     last_processed_block = head - 1
                     logger.info("Starting from head", head=head)
 
                 if head <= last_processed_block:
-                    time.sleep(settings.BITTENSOR_SECONDS_PER_BLOCK)
+                    reconnect.wait(settings.BITTENSOR_SECONDS_PER_BLOCK, lambda: self._shutdown)
                     continue
 
                 # Process all blocks from last_processed + 1 to head
@@ -80,16 +119,21 @@ class Command(BaseCommand):
                             logger.debug("Block processed (no extrinsics)", block=block_number)
                         last_processed_block = block_number
                     except Exception:
-                        logger.warning(
-                            "Error processing block, reconnecting...", block_number=block_number, exc_info=True
-                        )
                         self._close_provider(provider)
-                        provider = self._create_provider()
+                        provider = None
+                        delay = reconnect.record_failure(
+                            logger,
+                            "Error processing block, reconnecting...",
+                            block_number=block_number,
+                        )
+                        reconnect.wait(delay, lambda: self._shutdown)
                         # Skip the failed block — backfill service will catch it
                         last_processed_block = block_number
                         break
 
-                time.sleep(settings.BITTENSOR_SECONDS_PER_BLOCK)
+                if provider is not None:
+                    reconnect.wait(settings.BITTENSOR_SECONDS_PER_BLOCK, lambda: self._shutdown)
         finally:
-            self._close_provider(provider)
+            if provider is not None:
+                self._close_provider(provider)
             logger.info("sync_extrinsics daemon stopped")

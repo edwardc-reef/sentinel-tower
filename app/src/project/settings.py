@@ -334,6 +334,14 @@ PROMETHEUS_EXPORT_MIGRATIONS = env.bool("PROMETHEUS_EXPORT_MIGRATIONS")
 
 BITTENSOR_NETWORK = env.str("BITTENSOR_NETWORK", default="finney")
 BITTENSOR_SECONDS_PER_BLOCK = env.int("BITTENSOR_SECONDS_PER_BLOCK", default=12)
+
+# Reconnect policy for the long-running sync daemons. Opening a chain connection is a
+# network call that fails exactly when the endpoint is already unhealthy, so the daemons
+# retry it with exponential backoff instead of dying. The failure at
+# ALERT_AFTER_ATTEMPTS is logged at error level once per outage, which reaches Sentry.
+BITTENSOR_RECONNECT_INITIAL_DELAY_SECONDS = env.int("BITTENSOR_RECONNECT_INITIAL_DELAY_SECONDS", default=1)
+BITTENSOR_RECONNECT_MAX_DELAY_SECONDS = env.int("BITTENSOR_RECONNECT_MAX_DELAY_SECONDS", default=60)
+BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS = env.int("BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS", default=5)
 PYLON_URL = env("PYLON_URL", default="http://localhost:8090")
 
 BLOCK_DUMPER_START_FROM_BLOCK = "current"

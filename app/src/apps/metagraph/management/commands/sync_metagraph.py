@@ -1,5 +1,4 @@
 import signal
-import time
 
 import structlog
 from django.conf import settings
@@ -9,6 +8,7 @@ from sentinel.v1.providers.bittensor import bittensor_provider
 
 from apps.metagraph.block_tasks import sync_metagraph_for_block
 from apps.metagraph.services.metagraph_service import MetagraphService
+from project.core.services.bittensor_connection import ProviderReconnectBackoff
 
 logger = structlog.get_logger()
 
@@ -25,18 +25,52 @@ class Command(BaseCommand):
         logger.info("Received shutdown signal", signal=sig_name)
         self._shutdown = True
 
-    def _create_provider(self, provider_name: str) -> BlockchainProvider:
-        provider: BlockchainProvider
+    def _build_provider(self, provider_name: str) -> BlockchainProvider:
+        """Build a provider. No I/O happens here — the connection is opened by __enter__."""
         if provider_name == "bittensor":
-            provider = bittensor_provider()
-        elif provider_name == "pylon":
+            return bittensor_provider()
+        if provider_name == "pylon":
             from sentinel.v1.providers.pylon import pylon_provider
 
-            provider = pylon_provider(settings.PYLON_URL)
-        else:
-            raise ValueError(f"Unknown provider: {provider_name}")
-        provider.__enter__()
-        return provider
+            return pylon_provider(settings.PYLON_URL)
+        raise ValueError(f"Unknown provider: {provider_name}")
+
+    def _connect_provider(
+        self,
+        provider_name: str,
+        reconnect: ProviderReconnectBackoff,
+    ) -> BlockchainProvider | None:
+        """
+        Open a provider connection, retrying failures with exponential backoff.
+
+        Connecting is itself a network call (a websocket handshake against the chain
+        endpoint) and it is attempted precisely when that endpoint is already misbehaving,
+        so it fails often. Letting the failure escape would kill the daemon, so keep
+        retrying until it succeeds or shutdown is requested. The shared outage state
+        ensures one failure reaches error level after
+        BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS attempts.
+
+        Returns:
+            A connected provider, or None if shutdown was requested before one opened.
+
+        """
+        while not self._shutdown:
+            provider = self._build_provider(provider_name)
+            try:
+                provider.__enter__()
+            except Exception:
+                self._close_provider(provider)
+                delay = reconnect.record_failure(
+                    logger,
+                    "Provider connection failed",
+                    provider=provider_name,
+                )
+                reconnect.wait(delay, lambda: self._shutdown)
+                continue
+
+            return provider
+
+        return None
 
     def _close_provider(self, provider: BlockchainProvider) -> None:
         try:
@@ -65,25 +99,44 @@ class Command(BaseCommand):
             "sync_metagraph daemon starting", poll_interval=settings.BITTENSOR_SECONDS_PER_BLOCK, netuids=netuids
         )
 
-        provider = self._create_provider(provider_name)
+        provider: BlockchainProvider | None = None
         last_processed_block = None
+        reconnect = ProviderReconnectBackoff(
+            initial_delay_seconds=settings.BITTENSOR_RECONNECT_INITIAL_DELAY_SECONDS,
+            max_delay_seconds=settings.BITTENSOR_RECONNECT_MAX_DELAY_SECONDS,
+            alert_after_attempts=settings.BITTENSOR_RECONNECT_ALERT_AFTER_ATTEMPTS,
+        )
 
         try:
             while not self._shutdown:
+                # A dropped provider is reopened here, so every reconnect goes through the
+                # same retrying code path.
+                if provider is None:
+                    provider = self._connect_provider(provider_name, reconnect)
+                    if provider is None:
+                        break
+
                 try:
                     head = provider.get_current_block()
                 except Exception:
-                    logger.warning("Connection error fetching head, reconnecting...", exc_info=True)
                     self._close_provider(provider)
-                    provider = self._create_provider(provider_name)
+                    provider = None
+                    delay = reconnect.record_failure(
+                        logger,
+                        "Connection error fetching head, reconnecting...",
+                        provider=provider_name,
+                    )
+                    reconnect.wait(delay, lambda: self._shutdown)
                     continue
+
+                reconnect.record_recovery(logger, provider=provider_name)
 
                 if last_processed_block is None:
                     last_processed_block = head - 1
                     logger.info("Starting from head", head=head)
 
                 if head <= last_processed_block:
-                    time.sleep(settings.BITTENSOR_SECONDS_PER_BLOCK)
+                    reconnect.wait(settings.BITTENSOR_SECONDS_PER_BLOCK, lambda: self._shutdown)
                     continue
 
                 # Process all blocks from last_processed + 1 to head
@@ -116,18 +169,22 @@ class Command(BaseCommand):
                                 logger.debug("No metagraph data", block=block_number, netuid=netuid)
                         last_processed_block = block_number
                     except Exception:
-                        logger.warning(
-                            "Error syncing metagraph, reconnecting...",
-                            block_number=block_number,
-                            exc_info=True,
-                        )
                         self._close_provider(provider)
-                        provider = self._create_provider(provider_name)
+                        provider = None
+                        delay = reconnect.record_failure(
+                            logger,
+                            "Error syncing metagraph, reconnecting...",
+                            provider=provider_name,
+                            block_number=block_number,
+                        )
+                        reconnect.wait(delay, lambda: self._shutdown)
                         # Skip the failed block — backfill service will catch it
                         last_processed_block = block_number
                         break
 
-                time.sleep(settings.BITTENSOR_SECONDS_PER_BLOCK)
+                if provider is not None:
+                    reconnect.wait(settings.BITTENSOR_SECONDS_PER_BLOCK, lambda: self._shutdown)
         finally:
-            self._close_provider(provider)
+            if provider is not None:
+                self._close_provider(provider)
             logger.info("sync_metagraph daemon stopped")

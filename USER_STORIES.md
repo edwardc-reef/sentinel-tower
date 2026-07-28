@@ -29,6 +29,13 @@ Responsible for keeping the ingestion pipeline healthy and trusting the data it 
   gap), I want a backfill command (`backfill_extrinsics --lookback N`) that detects the exact missing
   block range and fills it in, using the live node for recent blocks and falling back to an archive
   node for older ones, so gaps don't require manual investigation.
+- **As a chain operator**, I want the ingestion daemons (`sync_extrinsics`, `sync_metagraph`) to ride
+  out chain-endpoint trouble: when a chain call fails they reopen the connection, and if that reopen
+  fails too (a websocket handshake that times out) they retry it with exponential backoff instead of
+  exiting, so a brief network blip doesn't stop ingestion. The backoff continues across successful
+  handshakes until a chain operation succeeds. If the endpoint stays unreachable one retry is logged
+  at error level (and so reaches Sentry), while later retries remain warnings until recovery resets the
+  outage state.
 - **As a chain operator**, I want failed extrinsics decoded into a human-readable error name
   (`SubtensorErrorCode`) instead of a raw hex module/index pair, so I can diagnose failures without
   cross-referencing the subtensor source.
