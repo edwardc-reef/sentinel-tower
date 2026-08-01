@@ -8,12 +8,13 @@ exclude-newer-span = "P14D"
 
 [options.exclude-newer-package]
 dagster-pipes = false
+dagster-webserver = false
+django = false
 dagster = false
+bittensor-sentinel = false
 cryptography = false
 dagster-graphql = false
-dagster-webserver = false
 dagster-shared = false
-django = false
 
 [manifest]
 constraints = [
@@ -403,7 +404,7 @@ wheels = [
 
 [[package]]
 name = "bittensor-sentinel"
-version = "0.2.4"
+version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asgiref" },
@@ -413,9 +414,9 @@ dependencies = [
     { name = "structlog" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/e9/93552f48a8e5f34b5e57ca377882af055b90fd82547320d19898fd00858c/bittensor_sentinel-0.2.4.tar.gz", hash = "sha256:481e454a3d5c0978dcf8c526291cf50d93bd38f62874abfc5d5b6f133873ac06", size = 199539, upload-time = "2026-06-08T16:38:44.738Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/ca/cf7d29bc27e042c8b32c187bae2fa29c5b886fccc21a8e19622ef458f05b/bittensor_sentinel-0.2.5.tar.gz", hash = "sha256:35fb8e4210e0c1d16873899474e05005cb0cf1f51b4fd2a41d7fc70469ba8fc9", size = 199548, upload-time = "2026-07-29T08:53:41.794Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/be/a89d6c832ef1f0651900cebab4fa42cce622720a5dcd840ae0689116706d/bittensor_sentinel-0.2.4-py3-none-any.whl", hash = "sha256:2bff22adb3c2f3aa3324b79aa1f9dbc405ca445d39eafe78e94f97e8b53dce94", size = 56667, upload-time = "2026-06-08T16:38:43.365Z" },
+    { url = "https://files.pythonhosted.org/packages/74/73/04c34daeb9394c8ad1a28a16ed6627c187a03ca1b36dffa1b17cccab28b2/bittensor_sentinel-0.2.5-py3-none-any.whl", hash = "sha256:31f16ce2a1a8ed7ed91219c48acbc81dc2ca179b8e74d3131554839ed2ea26ac", size = 56664, upload-time = "2026-07-29T08:53:40.39Z" },
 ]
 
 [package.optional-dependencies]
@@ -2376,7 +2377,7 @@ requires-dist = [
     { name = "abstract-block-dumper", extras = ["prometheus"], specifier = "==0.1.6" },
     { name = "bittensor", specifier = ">=10.5.0,<11" },
     { name = "bittensor-pylon-client", specifier = ">=1.8.0" },
-    { name = "bittensor-sentinel", extras = ["testing"], specifier = "==0.2.4" },
+    { name = "bittensor-sentinel", extras = ["testing"], specifier = "==0.2.5" },
     { name = "celery", specifier = "~=5.6.2" },
     { name = "dagster", specifier = ">=1.9.0" },
     { name = "dagster-webserver", specifier = ">=1.9.0" },

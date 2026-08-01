@@ -27,7 +27,7 @@ dependencies = [
     "django-business-metrics>=1.0.1,<2",
     "whitenoise~=6.6.0",
     "abstract-block-dumper[prometheus]==0.1.6",
-    "bittensor-sentinel[testing]==0.2.4",
+    "bittensor-sentinel[testing]==0.2.5",
     # 10.5.0+ decodes the post-2026-07-16 runtime's MechanismCountCurrent storage
     # correctly (10.0.0 returns a raw list and breaks metagraph sync); <11 because
     # 11.x is an incompatible API rewrite.
@@ -104,7 +104,7 @@ reportIncompatibleVariableOverride = false
 
 [tool.uv]
 exclude-newer = "14 days"
-exclude-newer-package = { django = false, cryptography = false, dagster = false, dagster-graphql = false, dagster-pipes = false, dagster-shared = false, dagster-webserver = false }
+exclude-newer-package = { django = false, cryptography = false, dagster = false, dagster-graphql = false, dagster-pipes = false, dagster-shared = false, dagster-webserver = false, bittensor-sentinel = false }
 constraint-dependencies = [
     "urllib3>=2.7.0",
     "idna>=3.15",

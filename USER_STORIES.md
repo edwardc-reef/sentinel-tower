@@ -20,6 +20,9 @@ Responsible for keeping the ingestion pipeline healthy and trusting the data it 
 - **As a chain operator**, I want every extrinsic on the chain recorded as it happens, so that I have
   a complete, queryable audit trail of on-chain activity (`sync_extrinsics` daemon →
   `apps.extrinsics.Extrinsic`).
+- **As a chain operator**, I want an unreadable block to remain a detectable ingestion gap instead
+  of being recorded as an empty block, so the daemon leaves it for `backfill_extrinsics` to recover
+  later without unnecessarily reopening a healthy provider connection.
 - **As a chain operator**, I want a liveness endpoint (`GET /alive/`) so that my orchestrator
   (Docker/Kubernetes) can detect and restart a hung ingestion process.
 - **As a chain operator**, I want Prometheus metrics (`/metrics`, `/business-metrics`) exposed so I

@@ -11,7 +11,7 @@ from sentinel.v1.testing import (
     RegisterNetworkExtrinsicDTOFactory,
 )
 
-from apps.extrinsics.block_tasks import store_block_extrinsics
+from apps.extrinsics.block_tasks import BlockExtrinsicsUnavailableError, store_block_extrinsics
 from apps.extrinsics.models import Extrinsic
 
 
@@ -185,13 +185,19 @@ def test_duplicate_extrinsics_are_skipped(mock_dispatch, mock_artifact):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("extrinsics", [[], None], ids=["empty-list", "no-response"])
 @patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=0)
 @patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
-def test_empty_block_returns_none(mock_dispatch, mock_artifact):
-    """A block with no extrinsics returns None."""
-    provider = FakeBlockchainProvider().with_block(600, "0xblockhash6").with_extrinsics("0xblockhash6", [])
+def test_unavailable_block_raises(mock_dispatch, mock_artifact, extrinsics):
+    """A missing block response is not mistaken for a block with no extrinsics."""
+    provider = FakeBlockchainProvider().with_block(600, "0xblockhash6")
+    if extrinsics is not None:
+        provider.with_extrinsics("0xblockhash6", extrinsics)
 
-    result = store_block_extrinsics(600, provider)
+    with pytest.raises(BlockExtrinsicsUnavailableError) as exc_info:
+        store_block_extrinsics(600, provider)
 
-    assert result is None
+    assert exc_info.value.block_number == 600
+    assert Extrinsic.objects.filter(block_number=600).count() == 0
+    mock_artifact.assert_not_called()
     mock_dispatch.assert_not_called()

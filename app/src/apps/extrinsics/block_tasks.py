@@ -14,6 +14,14 @@ from project.core.services import JsonLinesStorage
 logger = structlog.get_logger()
 
 
+class BlockExtrinsicsUnavailableError(RuntimeError):
+    """Raised when the chain provider did not return any extrinsics for a block."""
+
+    def __init__(self, block_number: int) -> None:
+        super().__init__(f"Block {block_number} could not be read from the chain")
+        self.block_number = block_number
+
+
 def _sanitize_json(obj: object) -> object:
     r"""Remove null bytes from JSON data (PostgreSQL JSONB doesn't support \u0000)."""
     if isinstance(obj, str):
@@ -86,12 +94,16 @@ def _parse_extrinsic_record(record: dict) -> dict | None:
     }
 
 
-def store_block_extrinsics(block_number: int, provider: BlockchainProvider) -> dict | None:
+def store_block_extrinsics(block_number: int, provider: BlockchainProvider) -> dict:
     """
     Store extrinsics from the given block number.
 
     Fetches extrinsics from the blockchain, stores them as JSONL artifacts,
     and syncs them to Django models.
+
+    Raises:
+        BlockUnavailableError: The provider returned no extrinsics for the block.
+
     """
     t0 = time.monotonic()
 
@@ -109,8 +121,7 @@ def store_block_extrinsics(block_number: int, provider: BlockchainProvider) -> d
     )
 
     if not extrinsics:
-        logger.debug("No extrinsics found in block", block_number=block_number)
-        return None
+        raise BlockExtrinsicsUnavailableError(block_number)
 
     t2 = time.monotonic()
 

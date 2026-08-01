@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from sentinel.v1.providers.base import BlockchainProvider
 from sentinel.v1.providers.bittensor import bittensor_provider
 
-from apps.extrinsics.block_tasks import store_block_extrinsics
+from apps.extrinsics.block_tasks import BlockExtrinsicsUnavailableError, store_block_extrinsics
 from project.core.services.bittensor_connection import ProviderReconnectBackoff
 
 logger = structlog.get_logger()
@@ -108,15 +108,19 @@ class Command(BaseCommand):
                         break
                     try:
                         result = store_block_extrinsics(block_number, provider)
-                        if result:
-                            logger.info(
-                                "Extrinsics synced",
-                                block=block_number,
-                                extrinsics=result["db_count"],
-                                elapsed_ms=result["elapsed_ms"],
-                            )
-                        else:
-                            logger.debug("Block processed (no extrinsics)", block=block_number)
+                        logger.info(
+                            "Extrinsics synced",
+                            block=block_number,
+                            extrinsics=result["db_count"],
+                            elapsed_ms=result["elapsed_ms"],
+                        )
+                        last_processed_block = block_number
+                    except BlockExtrinsicsUnavailableError:
+                        logger.warning(
+                            "Block unavailable; leaving gap for backfill",
+                            block_number=block_number,
+                            exc_info=True,
+                        )
                         last_processed_block = block_number
                     except Exception:
                         self._close_provider(provider)
