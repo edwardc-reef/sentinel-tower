@@ -17,7 +17,85 @@ services:
 
   db:
     image: postgres:14.0-alpine
-    shm_size: 256mb
+    shm_size: 1gb
+    # NOTE: every setting below is a `-c` command-line override, which outranks
+    # both postgresql.conf and postgresql.auto.conf (ALTER SYSTEM). Two values
+    # are currently set via ALTER SYSTEM on prod and are deliberately NOT
+    # repeated here, so they keep working as-is:
+    #   maintenance_work_mem = 256MB
+    #   autovacuum_vacuum_cost_limit = 2000
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,auto_explain
+      # Taken from postgres.auto.conf on prod system and set here for reproducibility
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - autovacuum_vacuum_cost_limit=${POSTGRES_AUTOVACUUM_VACUUM_COST_LIMIT:-2000}
+      # --- memory -----------------------------------------------------------
+      # Host has 7.7 GB RAM, no swap, ~4.3 GB already used by the app stack.
+      # 1GB is an 8x increase over the 128MB default and fixes the
+      # buffers_backend problem without gutting the OS page cache. Raise to 2GB
+      # via .env once the host has more RAM -- see docs/postgres-tuning.md.
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      # shared_buffers + realistic page cache. Must NOT exceed what the machine
+      # actually has free, or the planner overestimates how much is cached and
+      # picks nested loops / index scans that then hit disk.
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-3GB}
+      # 4MB default forces external merge sorts (disk spills) on dashboard
+      # aggregates. Per sort node per connection -- do not raise casually.
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-32MB}
+      # --- planner ----------------------------------------------------------
+      # Data lives on a Hetzner Cloud Volume: SSD-backed but network-attached,
+      # so seeks are cheaper than spinning rust (4) but dearer than local
+      # NVMe (1.1).
+      - -c
+      - random_page_cost=${POSTGRES_RANDOM_PAGE_COST:-1.5}
+      # --- checkpoints / WAL ------------------------------------------------
+      # 1GB default caused 115 forced (checkpoints_req) checkpoints and left
+      # the DB writing checkpoints ~79% of wall-clock time.
+      - -c
+      - max_wal_size=${POSTGRES_MAX_WAL_SIZE:-4GB}
+      - -c
+      - min_wal_size=${POSTGRES_MIN_WAL_SIZE:-1GB}
+      # --- observability ----------------------------------------------------
+      # Populates blk_read_time / blk_write_time so cache misses become
+      # measurable instead of inferred. Verify with `pg_test_timing`.
+      - -c
+      - track_io_timing=on
+      # 5000 entries was evicting 89k times/day, so occasional Grafana
+      # dashboard queries never survived long enough to be seen.
+      - -c
+      - pg_stat_statements.max=${POSTGRES_PGSS_MAX:-50000}
+      # Logs full text + duration of anything slower than this (ms).
+      - -c
+      - log_min_duration_statement=${POSTGRES_LOG_MIN_DURATION:-2000}
+      - -c
+      - log_checkpoints=on
+      - -c
+      - log_lock_waits=on
+      # kB. Catches work_mem overflow spilling to disk.
+      - -c
+      - log_temp_files=${POSTGRES_LOG_TEMP_FILES:-10240}
+      - -c
+      - log_autovacuum_min_duration=10000
+      # --- auto_explain: actual plans for slow queries -----------------------
+      # log_timing=off is deliberate: per-node timing is the expensive part of
+      # log_analyze, and this host is already CPU/IO saturated. log_buffers
+      # gives "shared hit=X read=Y", which is what distinguishes a bad plan
+      # from a cold cache.
+      - -c
+      - auto_explain.log_min_duration=${POSTGRES_AUTOEXPLAIN_MIN_DURATION:-5000}
+      - -c
+      - auto_explain.log_analyze=on
+      - -c
+      - auto_explain.log_buffers=on
+      - -c
+      - auto_explain.log_timing=off
     healthcheck:
       test: pg_isready -U ${POSTGRES_USER} || exit 1
     restart: unless-stopped
@@ -479,6 +557,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_NAME=Sentinel Tower
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DATAPROXY_TIMEOUT=120
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

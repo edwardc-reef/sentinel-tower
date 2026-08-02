@@ -10,18 +10,18 @@ resource "aws_db_subnet_group" "self" {
 
   tags = {
     Project = var.name
-    Env = var.env
-    Name = "DB subnet group"
+    Env     = var.env
+    Name    = "DB subnet group"
   }
 }
 
 resource "aws_db_parameter_group" "postgres_params" {
-  name_prefix   = "${var.name}-${var.env}-"
-  family = "postgres16"
+  name_prefix = "${var.name}-${var.env}-"
+  family      = "postgres16"
 
   parameter {
-    name         = "shared_buffers"
-    value        = "{DBInstanceClassMemory/32768}" # 1/4 of memory (value in 8kB blocks)
+    name  = "shared_buffers"
+    value = "{DBInstanceClassMemory/32768}" # 1/4 of memory (value in 8kB blocks)
   }
 
   parameter {
@@ -55,8 +55,14 @@ resource "aws_db_parameter_group" "postgres_params" {
   }
 
   parameter {
-    name  = "random_page_cost"
-    value = "1.1"
+    name         = "random_page_cost"
+    value        = "1.1"
+    apply_method = "immediate"
+  }
+
+  parameter {
+    name         = "max_wal_size"
+    value        = "4096" # 4GB (value in MB)
     apply_method = "immediate"
   }
 
