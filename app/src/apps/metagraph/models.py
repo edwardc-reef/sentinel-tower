@@ -396,6 +396,11 @@ class MetagraphDump(models.Model):
         related_name="metagraph_dumps",
     )
     epoch_position = models.PositiveIntegerField(null=True, blank=True)
+    tempo = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Subnet tempo at dump time; NULL on legacy rows (pre-0015)",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -440,3 +445,98 @@ class SnapshotHealthMetric(models.Model):
 
     def __str__(self) -> str:
         return f"netuid={self.netuid} window={self.window} missing={self.missing_blocks}"
+
+
+class ValidatorApyIngestState(models.Model):
+    """Singleton watermark for incremental validator-APY epoch ingestion.
+
+    `last_snapshot_id` is the highest NeuronSnapshot pk already scanned. The
+    ingest re-scans a fixed id overlap below it each tick, so the value may
+    lag actual coverage but must never exceed it.
+    """
+
+    id = models.SmallAutoField(primary_key=True)
+    last_snapshot_id = models.BigIntegerField()
+
+    class Meta:
+        db_table = "metagraph_validator_apy_ingest_state"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(id=1),
+                name="validator_apy_ingest_state_singleton",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"validator-apy ingest watermark at snapshot {self.last_snapshot_id}"
+
+
+class ValidatorApyEpoch(models.Model):
+    """One validator's realized APY for one completed epoch.
+
+    Derived from the epoch-end (`epoch_position=2`) validator snapshot;
+    maintained incrementally by `ingest_validator_apy_epochs`. `epoch_block`
+    is intentionally NOT a FK to Block: this table must survive raw-data
+    retention deletes.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    subnet_id = models.PositiveIntegerField(help_text="netuid (plain value, no FK)")
+    neuron = models.ForeignKey(
+        Neuron,
+        on_delete=models.CASCADE,
+        related_name="apy_epochs",
+    )
+    hotkey = models.ForeignKey(
+        Hotkey,
+        on_delete=models.CASCADE,
+        related_name="apy_epochs",
+    )
+    epoch_block = models.PositiveBigIntegerField()
+    epoch_ts = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Block timestamp; NULL until the source block is timestamped",
+    )
+    alpha_stake = models.DecimalField(
+        max_digits=30,
+        decimal_places=0,
+        help_text="Alpha stake in rao",
+    )
+    alpha_dividends = models.DecimalField(
+        max_digits=30,
+        decimal_places=0,
+        help_text="Net alpha dividends this epoch in rao",
+    )
+    total_stake = models.DecimalField(
+        max_digits=30,
+        decimal_places=0,
+        help_text="Total stake in rao",
+    )
+    tempo = models.PositiveIntegerField()
+    apy_pct = models.FloatField()
+
+    class Meta:
+        db_table = "metagraph_validator_apy_epoch"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subnet_id", "neuron", "epoch_block"],
+                name="unique_validator_apy_epoch",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["subnet_id", "epoch_ts"], name="idx_vae_subnet_ts"),
+            models.Index(fields=["epoch_ts"], name="idx_vae_ts"),
+            models.Index(
+                fields=["subnet_id", "neuron", "-epoch_block"],
+                name="idx_vae_latest",
+            ),
+            models.Index(
+                fields=["epoch_block"],
+                condition=Q(epoch_ts__isnull=True),
+                name="idx_vae_null_ts",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"APY epoch subnet={self.subnet_id} neuron={self.neuron_id} block={self.epoch_block}"
