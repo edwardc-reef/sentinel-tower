@@ -3,7 +3,9 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import psycopg
 import pytest
+from django.db import connections
 from django.utils import timezone
 from sentinel.v1.services.apy import single_epoch_apy
 
@@ -268,3 +270,103 @@ def test_retention_removes_old_and_null_ts_rows():
 
     assert ValidatorApyEpoch.objects.count() == 1
     assert ValidatorApyEpoch.objects.get().epoch_block == 90_000_000
+
+
+def _raw_pg_connection() -> psycopg.Connection:
+    """Second, independent session to the test database."""
+    s = connections["default"].settings_dict
+    return psycopg.connect(
+        host=s["HOST"],
+        port=s["PORT"],
+        dbname=s["NAME"],
+        user=s["USER"],
+        password=s["PASSWORD"],
+        autocommit=True,
+        connect_timeout=5,
+    )
+
+
+def _ensure_ingest_watermark_row() -> None:
+    """Re-seed the singleton watermark row consumed by `ingest_validator_apy_epochs`.
+
+    `transaction=True` tests run without a wrapping test transaction, so
+    pytest-django resets state via Django's TransactionTestCase teardown,
+    which TRUNCATEs every table (`flush`) rather than rolling back a
+    savepoint. That wipes the row this migration seeds once
+    (0015_validator_apy_epoch) and nothing re-runs a data migration on
+    flush, so each transaction=True test in this module must restore it
+    itself before calling the task.
+    """
+    ValidatorApyIngestState.objects.update_or_create(id=1, defaults={"last_snapshot_id": 0})
+
+
+@pytest.mark.django_db(transaction=True)
+def test_ingest_skips_when_lock_held():
+    _ensure_ingest_watermark_row()
+    _make_epoch_source()
+    with _raw_pg_connection() as other:
+        other.execute("SELECT pg_advisory_lock(%s)", [apy_epoch_ingest.INGEST_LOCK_KEY])
+        try:
+            tasks.ingest_validator_apy_epochs()
+            assert ValidatorApyEpoch.objects.count() == 0
+        finally:
+            other.execute("SELECT pg_advisory_unlock(%s)", [apy_epoch_ingest.INGEST_LOCK_KEY])
+
+    tasks.ingest_validator_apy_epochs()
+    assert ValidatorApyEpoch.objects.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_overlap_recovers_late_committing_snapshot():
+    _ensure_ingest_watermark_row()
+    # Session A inserts a snapshot but does NOT commit; a later snapshot commits
+    # first and the tick advances the watermark past A's id. After A commits,
+    # the fixed overlap must pick its row up on the next tick.
+    early = _make_epoch_source(block_number=1000)  # committed; allocates the LOWER id
+    late = _make_epoch_source(block_number=2000)  # committed; higher id
+
+    # Rebuild "early" as an uncommitted row from a second session with a lower id:
+    # delete early's snapshot, then re-insert the same values (same id) from an
+    # open, uncommitted transaction while the tick runs.
+    snap_values = dict(
+        neuron_id=early.neuron_id,
+        block_id=early.block_id,
+        uid=early.uid,
+        alpha_stake=early.alpha_stake,
+        alpha_dividends=early.alpha_dividends,
+        total_stake=early.total_stake,
+    )
+    early_id = early.id
+    early.delete()
+
+    with _raw_pg_connection() as other:
+        other.autocommit = False
+        try:
+            with other.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO metagraph_neuron_snapshot
+                        (id, neuron_id, block_id, uid, axon_address, total_stake,
+                         normalized_stake, rank, trust, emissions, alpha_stake,
+                         alpha_dividends, tao_dividends, dividend_apy, is_active,
+                         is_validator, is_immune, has_any_weights)
+                    VALUES (%(id)s, %(neuron_id)s, %(block_id)s, %(uid)s, '', %(total_stake)s,
+                            0, 0, 0, 0, %(alpha_stake)s,
+                            %(alpha_dividends)s, 0, 0, false,
+                            true, false, false)
+                    """,
+                    snap_values | {"id": early_id},
+                )
+                # Tick runs while the insert above is still uncommitted.
+                tasks.ingest_validator_apy_epochs()
+                assert set(ValidatorApyEpoch.objects.values_list("epoch_block", flat=True)) == {late.block_id}
+                state = ValidatorApyIngestState.objects.get(id=1)
+                assert state.last_snapshot_id >= late.id > early_id
+            other.commit()
+        except BaseException:
+            other.rollback()
+            raise
+
+    # Next tick: early_id <= watermark, but within the re-scan overlap.
+    tasks.ingest_validator_apy_epochs()
+    assert set(ValidatorApyEpoch.objects.values_list("epoch_block", flat=True)) == {1000, 2000}
