@@ -68,9 +68,9 @@ Wants trustworthy point-in-time snapshots of subnet state without touching the c
 - **As a subnet owner or miner**, I want per-subnet Grafana dashboards (`metagraph-miner.json`,
   `metagraph-validator.json`, `metagraph-multi-miner.json`) so I can track my own neurons' stake,
   incentive, and emissions over time.
-- **As an analyst**, I want the materialized APY views refreshed on a predictable schedule (every 1h)
-  without ever overlapping, so dashboard numbers are consistent and refreshes don't compete for database
-  resources.
+- **As an analyst**, I want validator per-epoch APY facts maintained incrementally (every 15 min,
+  single-flight) in a compact epoch table, so dashboard numbers stay fresh without recomputing
+  history and without competing for database resources.
 - **As an operator historically missing data**, I want a long-running backfill daemon
   (`historical_metagraph_backfill`) that walks a historical block range one epoch-start snapshot at a
   time, so I can populate months of missing APY history without babysitting the process.
