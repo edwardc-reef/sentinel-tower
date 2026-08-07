@@ -1,13 +1,16 @@
 """Tests for the incremental validator-APY epoch table and its ingest paths."""
 
+import json
+import math
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connections
+from django.db import connection, connections
 from django.utils import timezone
 from sentinel.v1.services.apy import single_epoch_apy
 
@@ -342,6 +345,120 @@ def test_backfill_command_is_idempotent_and_repairs():
 
     row = ValidatorApyEpoch.objects.get()
     assert int(row.alpha_dividends) == new_dividends
+
+
+_DASHBOARD = (
+    Path(__file__).resolve().parents[4]  # app/src/tests/metagraph/<file> -> repo root
+    / "grafana"
+    / "provisioning"
+    / "dashboards"
+    / "subnet-apy.json"
+)
+
+
+def _panel_sqls(title: str) -> list[str]:
+    """rawSql for every target of the named panel, in target order."""
+    panels = json.loads(_DASHBOARD.read_text())["panels"]
+    for panel in panels:
+        if panel.get("title") == title:
+            return [target["rawSql"] for target in panel["targets"]]
+    raise AssertionError(f"panel {title!r} not found")
+
+
+@pytest.mark.django_db
+def test_windows_panel_sql_reads_epoch_table():
+    snapshot = _make_epoch_source()
+    tasks.ingest_validator_apy_epochs()
+    subnet_id = snapshot.neuron.subnet_id
+    epoch_row = ValidatorApyEpoch.objects.get()
+
+    (sql,) = _panel_sqls("Subnet Validators APY")
+    sql = sql.replace("${subnet}", str(subnet_id))
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        columns = [c[0] for c in cursor.description]
+        rows = cursor.fetchall()
+
+    assert columns == [
+        "validator_name",
+        "alpha_stake_tao",
+        "stake_tao",
+        "apy_epoch",
+        "apy_1d",
+        "apy_1w",
+        "apy_1m",
+    ]
+    assert len(rows) == 1
+    assert rows[0][columns.index("apy_epoch")] == pytest.approx(epoch_row.apy_pct)
+
+
+@pytest.mark.django_db
+def test_windows_panel_sql_hides_globally_stale_subnet():
+    # Active subnet defines the global anchor; a subnet whose last epoch is
+    # older than the trailing month must produce NO rows (not an old "latest").
+    _make_epoch_source(block_number=1000, block_ts=timezone.now())
+    stale_subnet = SubnetFactory()
+    _make_epoch_source(
+        subnet=stale_subnet,
+        block_number=500,
+        block_ts=timezone.now() - timedelta(days=40),
+    )
+    tasks.ingest_validator_apy_epochs()
+
+    (sql,) = _panel_sqls("Subnet Validators APY")
+    sql = sql.replace("${subnet}", str(stale_subnet.netuid))
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        assert cursor.fetchall() == []
+
+
+@pytest.mark.django_db
+def test_epoch_panel_sql_reads_epoch_table():
+    snapshot = _make_epoch_source()
+    tasks.ingest_validator_apy_epochs()
+    expected_name = snapshot.neuron.hotkey.hotkey[:8] + "..."
+
+    validator_sql, subnet_avg_sql = _panel_sqls("Validator APY per epoch")
+    subnet_id = str(snapshot.neuron.subnet_id)
+
+    with connection.cursor() as cursor:
+        cursor.execute(validator_sql.replace("${subnet}", subnet_id))
+        columns = [c[0] for c in cursor.description]
+        rows = cursor.fetchall()
+    assert len(rows) == 1
+    assert rows[0][columns.index("metric")] == expected_name
+
+    with connection.cursor() as cursor:
+        cursor.execute(subnet_avg_sql.replace("${subnet}", subnet_id))
+        rows = cursor.fetchall()
+    assert len(rows) == 1
+
+
+@pytest.mark.django_db
+def test_epoch_panel_subnet_avg_sql_caps_dust_stake_overflow():
+    # Pins the migration-0011-style overflow guard on the dashboard's
+    # "Subnet avg" target: without it, one dust-stake epoch blows power()
+    # up to ~1e1270 and destroys the panel's Y axis.
+    snapshot = _make_epoch_source(alpha_stake=1000, alpha_dividends=500)
+    tasks.ingest_validator_apy_epochs()
+
+    _, subnet_avg_sql = _panel_sqls("Validator APY per epoch")
+    sql = subnet_avg_sql.replace("${subnet}", str(snapshot.neuron.subnet_id))
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+
+    assert len(rows) == 1
+    value = rows[0][2]
+    assert math.isfinite(value)
+    assert value <= 1_000_000
+
+
+def test_dashboard_has_no_mv_references():
+    text = _DASHBOARD.read_text()
+    assert "mv_validator_apy_windows" not in text
+    assert "mv_subnet_validator_apy_epochs" not in text
 
 
 def _raw_pg_connection() -> psycopg.Connection:

@@ -206,7 +206,7 @@
         "type": "postgres",
         "uid": "postgresql"
       },
-      "description": "Chain-time timestamp of the latest synced block. The APY panel anchors its 1h / 1d / 1w / 1m windows to a per-subnet variant of this.",
+      "description": "Chain-time timestamp of the latest synced block. The APY panel anchors its 1d / 1w / 1m windows to the global MAX(epoch_ts) in `metagraph_validator_apy_epoch`.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -526,7 +526,7 @@
         "type": "postgres",
         "uid": "postgresql"
       },
-      "description": "Per-validator APY for the selected subnet. Formula: `dividend \u00d7 (alpha_out_emission / alpha_stake) \u00d7 (1 \u2212 owner_cut) \u00d7 0.5 \u00d7 BLOCKS_PER_YEAR \u00d7 100`, where BLOCKS_PER_YEAR = 2,629,800 (31,557,600 s/yr \u00f7 12 s/block) and the 0.5 is the validator/miner split (chain constant). Denominator is `alpha_stake`, so this is the alpha-denominated yield \u2014 what a unit of alpha exposure earns. Inputs: `mm.dividend` (validator share of subnet dividends, normalised 0..1), `s.alpha_out_emission` (per-block alpha emission; effectively 1 TAO/block \u2014 falls back to 1e9 rao when DB column is 0), `s.owner_cut` (subnet owner cut; falls back to 0.09 when not synced from chain), `ns.alpha_stake` (alpha stake in rao). Windows (1h / 1d / 1w / 1m) anchor to MAX(block.timestamp) for this subnet's validator snapshots \u2014 Grafana's time picker is ignored. Caveats: `validator_take` (per-hotkey commission) not included so APY is gross; `owner_cut` is constant across subnets; multi-mechanism subnets only use mech_id = 0.",
+      "description": "Per-validator APY for the selected subnet, read from `metagraph_validator_apy_epoch` (one row per validator per completed epoch). Each row's `apy_pct` annualizes that single epoch's realized return by compounding: `((1 + alpha_dividends / alpha_stake) ^ epochs_per_year - 1) \u00d7 100`. `Latest Epoch APY` is the most recent epoch's value; `apy_1d` / `apy_1w` / `apy_1m` are averages of per-epoch APY over the trailing window, anchored on the table's global `MAX(epoch_ts)` (not this subnet's own latest epoch, and not Grafana's time picker) \u2014 a subnet with no epoch in the trailing month shows no rows. Caveats: single-epoch APY is volatile epoch-to-epoch; `alpha_stake` is the current per-uid stake rather than the chain's exact epoch-start base; multi-mechanism subnets only use mech_id = 0.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -601,7 +601,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "apy_1h"
+              "options": "apy_epoch"
             },
             "properties": [
               {
@@ -614,7 +614,7 @@
               },
               {
                 "id": "displayName",
-                "value": "1h APY"
+                "value": "Latest Epoch APY"
               }
             ]
           },
@@ -727,7 +727,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT validator_name, alpha_stake_tao, stake_tao, apy_1h, apy_1d, apy_1w, apy_1m\nFROM mv_validator_apy_windows\nWHERE subnet_id = ${subnet}\nORDER BY alpha_stake_tao DESC",
+          "rawSql": "WITH anchor AS (\n    SELECT MAX(epoch_ts) AS end_t FROM metagraph_validator_apy_epoch\n),\nagg AS (\n    SELECT e.neuron_id, e.hotkey_id,\n           AVG(e.apy_pct) FILTER (WHERE e.epoch_ts >= a.end_t - INTERVAL '1 day')  AS apy_1d,\n           AVG(e.apy_pct) FILTER (WHERE e.epoch_ts >= a.end_t - INTERVAL '1 week') AS apy_1w,\n           AVG(e.apy_pct) AS apy_1m\n    FROM metagraph_validator_apy_epoch e, anchor a\n    WHERE e.subnet_id = ${subnet} AND e.epoch_ts >= a.end_t - INTERVAL '1 month'\n    GROUP BY e.neuron_id, e.hotkey_id\n),\nlatest AS (\n    SELECT DISTINCT ON (e.neuron_id)\n           e.neuron_id, e.hotkey_id, e.apy_pct AS apy_latest,\n           e.alpha_stake / 1e9 AS alpha_stake_tao,\n           e.total_stake / 1e9 AS stake_tao\n    FROM metagraph_validator_apy_epoch e, anchor a\n    WHERE e.subnet_id = ${subnet}\n      AND e.epoch_ts >= a.end_t - INTERVAL '1 month'\n    ORDER BY e.neuron_id, e.epoch_block DESC\n)\nSELECT COALESCE(NULLIF(h.label, ''), LEFT(h.hotkey, 8) || '...') AS validator_name,\n       l.alpha_stake_tao,\n       l.stake_tao,\n       l.apy_latest AS apy_epoch,\n       COALESCE(g.apy_1d, 0) AS apy_1d,\n       COALESCE(g.apy_1w, 0) AS apy_1w,\n       COALESCE(g.apy_1m, 0) AS apy_1m\nFROM latest l\nJOIN metagraph_hotkey h ON h.id = l.hotkey_id\nLEFT JOIN agg g ON g.neuron_id = l.neuron_id\nORDER BY l.alpha_stake_tao DESC",
           "refId": "A"
         }
       ],
@@ -773,7 +773,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT epoch_ts AS time, validator_name AS metric, apy_pct AS value FROM mv_subnet_validator_apy_epochs WHERE subnet_id = ${subnet} ORDER BY time",
+          "rawSql": "SELECT e.epoch_ts AS time, COALESCE(NULLIF(h.label, ''), LEFT(h.hotkey, 8) || '...') AS metric, e.apy_pct AS value FROM metagraph_validator_apy_epoch e JOIN metagraph_hotkey h ON h.id = e.hotkey_id WHERE e.subnet_id = ${subnet} AND e.epoch_ts IS NOT NULL ORDER BY time",
           "refId": "A"
         },
         {
@@ -784,7 +784,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT epoch_ts AS time, 'Subnet avg' AS metric, (power(1 + SUM(alpha_dividends)::numeric / NULLIF(SUM(alpha_stake), 0), 2629800.0 / (MIN(tempo) + 1)) - 1) * 100 AS value FROM mv_subnet_validator_apy_epochs WHERE subnet_id = ${subnet} GROUP BY epoch_ts ORDER BY time",
+          "rawSql": "SELECT epoch_ts AS time, 'Subnet avg' AS metric, LEAST((exp(LEAST((2629800.0 / (MIN(tempo) + 1)) * ln(1 + SUM(alpha_dividends)::numeric / NULLIF(SUM(alpha_stake), 0)), 14::numeric)) - 1) * 100, 1000000::numeric) AS value FROM metagraph_validator_apy_epoch WHERE subnet_id = ${subnet} AND epoch_ts IS NOT NULL GROUP BY epoch_ts ORDER BY time",
           "refId": "B"
         }
       ],
@@ -832,7 +832,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT epoch_ts AS time, validator_name AS metric, alpha_stake / 1e9 AS value FROM mv_subnet_validator_apy_epochs WHERE subnet_id = ${subnet} ORDER BY time",
+          "rawSql": "SELECT e.epoch_ts AS time, COALESCE(NULLIF(h.label, ''), LEFT(h.hotkey, 8) || '...') AS metric, e.alpha_stake / 1e9 AS value FROM metagraph_validator_apy_epoch e JOIN metagraph_hotkey h ON h.id = e.hotkey_id WHERE e.subnet_id = ${subnet} AND e.epoch_ts IS NOT NULL ORDER BY time",
           "refId": "A"
         }
       ],
@@ -880,7 +880,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT epoch_ts AS time, validator_name AS metric, alpha_dividends / 1e9 AS value FROM mv_subnet_validator_apy_epochs WHERE subnet_id = ${subnet} ORDER BY time",
+          "rawSql": "SELECT e.epoch_ts AS time, COALESCE(NULLIF(h.label, ''), LEFT(h.hotkey, 8) || '...') AS metric, e.alpha_dividends / 1e9 AS value FROM metagraph_validator_apy_epoch e JOIN metagraph_hotkey h ON h.id = e.hotkey_id WHERE e.subnet_id = ${subnet} AND e.epoch_ts IS NOT NULL ORDER BY time",
           "refId": "A"
         }
       ],
