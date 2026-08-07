@@ -6,7 +6,9 @@ autovacuum and live sync keep up). Two independent cutoffs: non-validator
 neuron snapshots (+ their mechanism metrics) follow the snapshot cutoff,
 while the bulk tables (weight, bond, collateral) follow the — typically
 newer — bulk cutoff. Validator neuron snapshots and their mechanism metrics
-are never deleted — the APY materialized views read them.
+are never deleted — they are the source data for the validator-APY epoch
+ingest (and its backfill/repair command); the legacy APY materialized views
+also still read them until Release B.
 
 There are no DB-level cascades (all FKs are NO ACTION, DEFERRABLE INITIALLY
 DEFERRED), so each snapshot batch deletes child mechanism_metrics rows and
