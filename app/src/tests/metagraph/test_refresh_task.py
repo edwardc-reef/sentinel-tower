@@ -1,4 +1,4 @@
-"""The 15-min beat task must refresh both APY materialized views."""
+"""refresh_validator_apy_windows is manual/emergency-only until Release B drops the MVs."""
 
 from unittest.mock import MagicMock, patch
 

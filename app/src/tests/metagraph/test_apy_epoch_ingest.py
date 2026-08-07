@@ -272,6 +272,21 @@ def test_retention_removes_old_and_null_ts_rows():
     assert ValidatorApyEpoch.objects.get().epoch_block == 90_000_000
 
 
+def test_beat_schedule_runs_ingest_not_refresh(settings):
+    assert "refresh-validator-apy-windows" not in settings.CELERY_BEAT_SCHEDULE
+    entry = settings.CELERY_BEAT_SCHEDULE["ingest-validator-apy-epochs"]
+    assert entry["task"] == "apps.metagraph.tasks.ingest_validator_apy_epochs"
+    assert entry["schedule"] == timedelta(minutes=15)
+
+
+@pytest.mark.django_db
+def test_ingest_fails_loudly_when_watermark_row_missing():
+    ValidatorApyIngestState.objects.all().delete()
+
+    with pytest.raises(RuntimeError, match="ingest_state singleton"):
+        tasks.ingest_validator_apy_epochs()
+
+
 def _raw_pg_connection() -> psycopg.Connection:
     """Second, independent session to the test database."""
     s = connections["default"].settings_dict

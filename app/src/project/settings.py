@@ -149,12 +149,12 @@ CELERY_TASK_ROUTES = {
 }
 CELERY_TASK_TIME_LIMIT = int(timedelta(minutes=5).total_seconds())
 CELERY_BEAT_SCHEDULE = {
-    "refresh-validator-apy-windows": {
-        "task": "apps.metagraph.tasks.refresh_validator_apy_windows",
-        # Each refresh costs ~3min of ~1.5 cores on the 4-core prod box; the
-        # 15min cadence caused constant CPU spikes. Dashboards tolerate 1h
-        # staleness.
-        "schedule": timedelta(minutes=60),
+    "ingest-validator-apy-epochs": {
+        "task": "apps.metagraph.tasks.ingest_validator_apy_epochs",
+        # Incremental: each tick scans only new snapshot ids plus a fixed
+        # overlap, so the 15-min cadence is cheap (the old full MV refresh
+        # was hourly only because it burned ~3 min of CPU per run).
+        "schedule": timedelta(minutes=15),
     },
     "update-snapshot-health-metrics": {
         "task": "apps.metagraph.tasks.update_snapshot_health_metrics",
