@@ -5,6 +5,8 @@ from decimal import Decimal
 
 import psycopg
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connections
 from django.utils import timezone
 from sentinel.v1.services.apy import single_epoch_apy
@@ -287,6 +289,61 @@ def test_ingest_fails_loudly_when_watermark_row_missing():
         tasks.ingest_validator_apy_epochs()
 
 
+@pytest.mark.django_db
+def test_backfill_command_covers_range_in_chunks():
+    # Pins off-by-ones: 49_999 falls at the end of the first chunk, 50_000 at
+    # the start of the second, and 100_000 is both block_end AND an exact
+    # multiple of chunk_size, so it only lands in a chunk at all if the loop
+    # uses range(block_start, block_end + 1, chunk_size) rather than dropping
+    # the final block to an off-by-one.
+    for block_number in (49_999, 50_000, 100_000):
+        _make_epoch_source(block_number=block_number)
+    # Watermark ahead of these ids simulates "seeded on deploy, history missing".
+    ValidatorApyIngestState.objects.filter(id=1).update(last_snapshot_id=10**9)
+
+    call_command(
+        "backfill_validator_apy_epochs",
+        block_start=0,
+        block_end=100_000,
+        chunk_size=50_000,
+    )
+
+    assert ValidatorApyEpoch.objects.count() == 3
+    # Explicit range = repair mode: the watermark must be left untouched
+    # entirely (not just non-regressing) — see the watermark-advance comment
+    # in backfill_validator_apy_epochs.
+    assert ValidatorApyIngestState.objects.get(id=1).last_snapshot_id == 10**9
+
+
+@pytest.mark.django_db
+def test_backfill_derived_mode_advances_watermark():
+    snapshot = _make_epoch_source(block_ts="now")
+    ValidatorApyIngestState.objects.filter(id=1).update(last_snapshot_id=0)
+
+    # No explicit range: derived from --days default, so this is the
+    # "standard whole-recent-window backfill" mode and must advance the
+    # watermark (unlike the explicit-range repair mode above).
+    call_command("backfill_validator_apy_epochs")
+
+    assert ValidatorApyEpoch.objects.count() == 1
+    assert ValidatorApyIngestState.objects.get(id=1).last_snapshot_id == snapshot.id
+
+
+@pytest.mark.django_db
+def test_backfill_command_is_idempotent_and_repairs():
+    snapshot = _make_epoch_source(block_number=5_000)
+    call_command("backfill_validator_apy_epochs", block_start=0, block_end=10_000)
+    assert ValidatorApyEpoch.objects.count() == 1
+
+    new_dividends = 1_100_000_000
+    snapshot.alpha_dividends = new_dividends
+    snapshot.save(update_fields=["alpha_dividends"])
+    call_command("backfill_validator_apy_epochs", block_start=0, block_end=10_000)
+
+    row = ValidatorApyEpoch.objects.get()
+    assert int(row.alpha_dividends) == new_dividends
+
+
 def _raw_pg_connection() -> psycopg.Connection:
     """Second, independent session to the test database."""
     s = connections["default"].settings_dict
@@ -385,3 +442,15 @@ def test_overlap_recovers_late_committing_snapshot():
     # Next tick: early_id <= watermark, but within the re-scan overlap.
     tasks.ingest_validator_apy_epochs()
     assert set(ValidatorApyEpoch.objects.values_list("epoch_block", flat=True)) == {1000, 2000}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_backfill_command_refuses_when_lock_held():
+    _ensure_ingest_watermark_row()
+    with _raw_pg_connection() as other:
+        other.execute("SELECT pg_advisory_lock(%s)", [apy_epoch_ingest.INGEST_LOCK_KEY])
+        try:
+            with pytest.raises(CommandError):
+                call_command("backfill_validator_apy_epochs", block_start=0, block_end=10)
+        finally:
+            other.execute("SELECT pg_advisory_unlock(%s)", [apy_epoch_ingest.INGEST_LOCK_KEY])

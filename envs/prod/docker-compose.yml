@@ -260,6 +260,24 @@ services:
     logging:
       <<: *logging
 
+  backfill-validator-apy-epochs:
+    image: project/app
+    init: true
+    env_file: ./.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - MEDIA_ROOT=${MEDIA_ROOT}
+    command: python manage.py backfill_validator_apy_epochs
+    volumes:
+      - ${MEDIA_VOLUME_PATH:-./media}:${MEDIA_ROOT}
+    profiles:
+      - metagraph
+    depends_on:
+      - db
+    logging:
+      <<: *logging
+
   backfill-extrinsics:
     image: project/app
     init: true
