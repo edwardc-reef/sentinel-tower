@@ -1,5 +1,6 @@
 """Tests for the incremental validator-APY epoch table and its ingest paths."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -8,9 +9,11 @@ from sentinel.v1.services.apy import single_epoch_apy
 
 from apps.metagraph import tasks
 from apps.metagraph.models import (
+    MetagraphDump,
     ValidatorApyEpoch,
     ValidatorApyIngestState,
 )
+from apps.metagraph.services import apy_epoch_ingest
 from tests.factories.metagraph import (
     BlockFactory,
     MetagraphDumpFactory,
@@ -181,3 +184,87 @@ def test_ingest_null_block_timestamp_passes_through():
     tasks.ingest_validator_apy_epochs()
 
     assert ValidatorApyEpoch.objects.get().epoch_ts is None
+
+
+@pytest.mark.django_db
+def test_ingest_repairs_corrected_source_row():
+    snapshot = _make_epoch_source()
+    tasks.ingest_validator_apy_epochs()
+
+    # A re-dump corrected the dividends (update_or_create keeps the same id,
+    # which stays inside the re-scan overlap). Kept well under the 1,000,000%
+    # overflow-guard cap (see apy_epoch_ingest._APY_EXPR) so this pins genuine
+    # recomputation against the golden formula rather than the cap, which has
+    # its own dedicated test (test_ingest_dust_stake_is_capped_not_error).
+    new_dividends = 1_100_000_000
+    snapshot.alpha_dividends = new_dividends
+    snapshot.save(update_fields=["alpha_dividends"])
+    tasks.ingest_validator_apy_epochs()
+
+    row = ValidatorApyEpoch.objects.get()
+    assert int(row.alpha_dividends) == new_dividends
+    assert row.apy_pct == pytest.approx(
+        single_epoch_apy(alpha_earned=float(new_dividends), alpha_staked=float(10**12), tempo=360),
+        rel=1e-6,
+    )
+
+
+@pytest.mark.django_db
+def test_ingest_removes_row_made_ineligible():
+    snapshot = _make_epoch_source()
+    tasks.ingest_validator_apy_epochs()
+    assert ValidatorApyEpoch.objects.count() == 1
+
+    snapshot.is_validator = False
+    snapshot.save(update_fields=["is_validator"])
+    tasks.ingest_validator_apy_epochs()
+
+    assert ValidatorApyEpoch.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_ingest_removes_row_when_epoch_position_corrected():
+    snapshot = _make_epoch_source()
+    tasks.ingest_validator_apy_epochs()
+
+    MetagraphDump.objects.filter(netuid=snapshot.neuron.subnet_id, block=snapshot.block).update(epoch_position=1)
+    tasks.ingest_validator_apy_epochs()
+
+    assert ValidatorApyEpoch.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_sweep_heals_null_timestamp():
+    snapshot = _make_epoch_source(block_ts=None)
+    tasks.ingest_validator_apy_epochs()
+    assert ValidatorApyEpoch.objects.get().epoch_ts is None
+
+    ts = timezone.now()
+    snapshot.block.timestamp = ts
+    snapshot.block.save(update_fields=["timestamp"])
+    # Push the watermark past the re-scan overlap so the upsert can no longer
+    # see this snapshot — only SWEEP_SQL can heal the row now. This mirrors
+    # the real prod pattern: historical backfill stores NULL timestamps that
+    # are filled long after the snapshot ids left the overlap.
+    ValidatorApyIngestState.objects.filter(id=1).update(
+        last_snapshot_id=snapshot.id + apy_epoch_ingest.REPROCESS_MARGIN + 1
+    )
+    tasks.ingest_validator_apy_epochs()
+
+    assert ValidatorApyEpoch.objects.get().epoch_ts == ts
+
+
+@pytest.mark.django_db
+def test_retention_removes_old_and_null_ts_rows():
+    # Block 100 (timestamped, 91 days old) becomes the retention cutoff block;
+    # the NULL-ts row must sit at a LOWER block number (99) so the block-number
+    # fallback arm (`epoch_ts IS NULL AND epoch_block <= cutoff`) removes it.
+    old_ts = timezone.now() - timedelta(days=91)
+    _make_epoch_source(block_number=99, block_ts=None)  # old, NULL ts
+    _make_epoch_source(block_number=100, block_ts=old_ts)  # old, timestamped
+    _make_epoch_source(block_number=90_000_000, block_ts="now")  # fresh
+
+    tasks.ingest_validator_apy_epochs()
+
+    assert ValidatorApyEpoch.objects.count() == 1
+    assert ValidatorApyEpoch.objects.get().epoch_block == 90_000_000
