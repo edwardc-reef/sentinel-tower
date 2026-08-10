@@ -345,6 +345,9 @@ class MetagraphSyncService:
                 "epoch_position": epoch_position,
                 "started_at": dump_metadata.started_at,
                 "finished_at": dump_metadata.finished_at,
+                # Snapshot the tempo the epoch actually ran with; Subnet.tempo
+                # is mutable and later changes must not rewrite history.
+                "tempo": subnet.tempo,
             },
         )
         return dump

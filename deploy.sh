@@ -18,7 +18,7 @@ docker compose up -d db  # in case it hasn't been launched before
 
 # Stop running services built from an application image. Profiled services are
 # restarted explicitly below because a plain `compose up` does not enable them.
-APP_SERVICES='^(app|block-scheduler|sync-extrinsics|sync-metagraph|backfill-metagraph|historical-metagraph-backfill|backfill-extrinsics|prune-retention|celery-worker|celery-beat|celery-flower)$'
+APP_SERVICES='^(app|block-scheduler|sync-extrinsics|sync-metagraph|backfill-metagraph|historical-metagraph-backfill|backfill-validator-apy-epochs|backfill-extrinsics|prune-retention|celery-worker|celery-beat|celery-flower)$'
 SERVICES=$(docker compose ps --services 2>/dev/null | grep -E "$APP_SERVICES" || true)
 if [ -n "$SERVICES" ]; then
     # Build profiled service images before stopping their existing containers.

@@ -234,6 +234,15 @@ services:
     profiles:
       - historical-backfill
 
+  backfill-validator-apy-epochs:
+    <<: *backend
+    command: python manage.py backfill_validator_apy_epochs
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - metagraph
+
 volumes:
   app-venv:
   prometheus-data:

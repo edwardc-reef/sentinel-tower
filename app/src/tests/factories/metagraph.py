@@ -1,4 +1,5 @@
 import factory
+from django.utils import timezone
 from factory.django import DjangoModelFactory
 
 import apps.metagraph.models as metagraph_models
@@ -136,3 +137,19 @@ class MetagraphDumpFactory(DjangoModelFactory):
 
     netuid = factory.Sequence(lambda n: n + 1)
     block = factory.SubFactory(BlockFactory)
+
+
+class ValidatorApyEpochFactory(DjangoModelFactory):
+    class Meta:
+        model = metagraph_models.ValidatorApyEpoch
+
+    subnet_id = factory.Sequence(lambda n: n + 1)
+    neuron = factory.SubFactory(NeuronFactory)
+    hotkey = factory.LazyAttribute(lambda o: o.neuron.hotkey)
+    epoch_block = factory.Sequence(lambda n: 1000 + n * 360)
+    epoch_ts = factory.LazyFunction(timezone.now)
+    alpha_stake = 10**12
+    alpha_dividends = 10**9
+    total_stake = 10**12
+    tempo = 360
+    apy_pct = 0.0

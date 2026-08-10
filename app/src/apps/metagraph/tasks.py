@@ -1,30 +1,27 @@
 """Celery tasks for the metagraph app.
 
-`refresh_validator_apy_windows` is run by Celery beat every 15 minutes (see
-CELERY_BEAT_SCHEDULE in project/settings.py) to refresh the materialized views
-that back the validator-APY dashboard: `mv_validator_apy_windows` (rolling
-time-window APY) and `mv_subnet_validator_apy_epochs` (per-epoch APY).
+`ingest_validator_apy_epochs` is the 15-min beat task (see
+CELERY_BEAT_SCHEDULE in project/settings.py) that incrementally maintains
+`metagraph_validator_apy_epoch`, the table backing the validator-APY
+dashboard.
 
-CONCURRENTLY keeps the dashboard readable while refreshing; it requires the
-unique index on each view.
-
-Two safeguards keep the refresh healthy on the memory-constrained prod host:
-  * a session-level advisory lock so overlapping beat ticks / manual runs don't
-    stack — two concurrent REFRESHes of the same view block each other and pile
-    up, which is how a single slow refresh snowballs into "never finishes";
-  * a raised `work_mem`, because the window view aggregates ~1 month of the
-    multi-GB neuron_snapshot table and the 4 MB default spills the sort to disk.
+`refresh_validator_apy_windows` is no longer scheduled. It refreshes the
+legacy materialized views `mv_validator_apy_windows` and
+`mv_subnet_validator_apy_epochs` and is kept for manual/emergency use only,
+until Release B drops those views. See its own docstring for refresh details.
 """
 
 from datetime import timedelta
 
 import structlog
+from billiard.exceptions import SoftTimeLimitExceeded
 from celery import shared_task
 from django.conf import settings
 from django.db import connection, transaction
 from prometheus_client import Gauge
 
 from apps.metagraph.models import Block, NeuronSnapshot, SnapshotHealthMetric, Subnet
+from apps.metagraph.services import apy_epoch_ingest
 from apps.metagraph.utils import get_dumpable_blocks_in_range
 
 logger = structlog.get_logger()
@@ -39,6 +36,22 @@ _REFRESH_WORK_MEM = "256MB"
 
 @shared_task(time_limit=REFRESH_TIME_LIMIT, soft_time_limit=REFRESH_TIME_LIMIT - 30)
 def refresh_validator_apy_windows() -> None:
+    """Refresh the legacy validator-APY materialized views (manual/emergency only).
+
+    Superseded by `ingest_validator_apy_epochs` on the beat schedule; kept
+    until Release B drops `mv_validator_apy_windows` and
+    `mv_subnet_validator_apy_epochs`.
+
+    CONCURRENTLY keeps the dashboard readable while refreshing; it requires the
+    unique index on each view.
+
+    Two safeguards keep the refresh healthy on the memory-constrained prod host:
+      * a session-level advisory lock so overlapping beat ticks / manual runs don't
+        stack — two concurrent REFRESHes of the same view block each other and pile
+        up, which is how a single slow refresh snowballs into "never finishes";
+      * a raised `work_mem`, because the window view aggregates ~1 month of the
+        multi-GB neuron_snapshot table and the 4 MB default spills the sort to disk.
+    """
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_try_advisory_lock(%s)", [_REFRESH_LOCK_KEY])
         row = cursor.fetchone()
@@ -59,6 +72,87 @@ def refresh_validator_apy_windows() -> None:
             cursor.execute("RESET work_mem")
             cursor.execute("RESET max_parallel_workers_per_gather")
             cursor.execute("SELECT pg_advisory_unlock(%s)", [_REFRESH_LOCK_KEY])
+
+
+INGEST_TIME_LIMIT = int(timedelta(minutes=10).total_seconds())
+
+
+@shared_task(time_limit=INGEST_TIME_LIMIT, soft_time_limit=INGEST_TIME_LIMIT - 30)
+def ingest_validator_apy_epochs() -> None:
+    """Incrementally maintain metagraph_validator_apy_epoch (15-min beat).
+
+    Single transaction: xact advisory lock (single-flight, self-releasing),
+    transaction-scoped statement_timeout, reconcile+upsert over the bounded id
+    overlap, timestamp sweep, retention, watermark advance.
+
+    The try/except sits INSIDE the atomic block on purpose: if the soft time
+    limit fires mid-statement, `transaction.atomic().__exit__` would otherwise
+    run first and try to ROLLBACK a connection that's still busy running the
+    cancelled query server-side, raising OperationalError and masking
+    SoftTimeLimitExceeded before this handler ever sees it. With the handler
+    inside atomic, we cancel the in-flight query and close the connection
+    ourselves; Django's closed_in_transaction handling then sees the closed
+    connection and skips the ROLLBACK. Never issue further statements on a
+    possibly-busy connection.
+    """
+    with transaction.atomic():
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_xact_lock(%s)", [apy_epoch_ingest.INGEST_LOCK_KEY])
+                if not cursor.fetchone()[0]:
+                    logger.info("validator-apy ingest already running; skipping this tick")
+                    return
+                cursor.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    [apy_epoch_ingest.STATEMENT_TIMEOUT],
+                )
+                cursor.execute(
+                    "SELECT last_snapshot_id FROM metagraph_validator_apy_ingest_state WHERE id = 1 FOR UPDATE"
+                )
+                state_row = cursor.fetchone()
+                if state_row is None:
+                    # Only reachable via manual DB surgery — migration 0015 seeds
+                    # the row. Do NOT auto-seed: 0 triggers an unbounded rescan
+                    # crash-loop, MAX(id) silently skips unprocessed snapshots.
+                    raise RuntimeError(
+                        "validator-apy ingest_state singleton (id=1) is missing; re-seed it manually per migration 0015"
+                    )
+                watermark = state_row[0]
+                cursor.execute("SELECT COALESCE(MAX(id), 0) FROM metagraph_neuron_snapshot")
+                current_max = cursor.fetchone()[0]
+                if current_max - watermark > apy_epoch_ingest.REPROCESS_MARGIN // 2:
+                    logger.warning(
+                        "validator-apy ingest tick advanced by more than half the "
+                        "re-scan margin; sync volume may be outgrowing the overlap",
+                        watermark=watermark,
+                        current_max=current_max,
+                        margin=apy_epoch_ingest.REPROCESS_MARGIN,
+                    )
+                deleted, upserted = apy_epoch_ingest.ingest_id_range(
+                    cursor,
+                    min_id=max(0, watermark - apy_epoch_ingest.REPROCESS_MARGIN),
+                    max_id=current_max,
+                )
+                swept = apy_epoch_ingest.sweep_timestamps(cursor)
+                expired = apy_epoch_ingest.apply_retention(cursor)
+                cursor.execute(
+                    "UPDATE metagraph_validator_apy_ingest_state "
+                    "SET last_snapshot_id = GREATEST(last_snapshot_id, %s) WHERE id = 1",
+                    [current_max],
+                )
+        except SoftTimeLimitExceeded:
+            if connection.connection is not None:
+                connection.connection.cancel_safe(timeout=5.0)
+            connection.close()  # atomic sees closed_in_transaction and skips ROLLBACK
+            raise
+    logger.info(
+        "Ingested validator APY epochs",
+        reconciled=deleted,
+        upserted=upserted,
+        timestamps_swept=swept,
+        expired=expired,
+        scanned_to=current_max,
+    )
 
 
 SNAPSHOT_HEALTH_TIME_LIMIT = int(timedelta(minutes=10).total_seconds())
