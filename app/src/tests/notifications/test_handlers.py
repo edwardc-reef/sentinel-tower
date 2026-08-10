@@ -131,6 +131,28 @@ def test_registration_outcome_queued(registration_handler):
     assert "**outcome**: queued — 2451.7 TAO locked, alpha price snapshot 0.250000" in content
 
 
+def test_registration_outcome_queued_decodes_bits_price(registration_handler):
+    """On-chain U64F64 decodes as {"bits": N}; values from finney block 8693261."""
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "lock_amount": 707126707813,
+                    "median_subnet_alpha_price": {"bits": 109848439767197268},
+                },
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 707.126707813 TAO locked, alpha price snapshot 0.005955" in content
+
+
 def test_registration_outcome_queued_after_prune(registration_handler):
     dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
     ext = flatten_extrinsic(

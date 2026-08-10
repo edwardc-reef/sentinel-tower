@@ -119,7 +119,13 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
 
     @staticmethod
     def _format_u64f64(value: Any) -> str:
-        """Render a U64F64 fixed-point (raw bits) as a decimal, falling back to raw display."""
+        """Render a U64F64 fixed-point (raw bits) as a decimal, falling back to raw display.
+
+        On-chain the value decodes as a ``{"bits": <int>}`` struct (observed on
+        finney, e.g. block 8693261); a bare int of raw bits is accepted too.
+        """
+        if isinstance(value, dict):
+            value = value.get("bits")
         if isinstance(value, int) and not isinstance(value, bool):
             return f"{value / U64F64_SCALE:.6f}"
         return ExtrinsicNotification.format_value(value)
