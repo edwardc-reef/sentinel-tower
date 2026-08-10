@@ -91,6 +91,149 @@ def test_registration_format_decodes_identity(registration_handler):
     assert "**github_repo**: https://github.com/example" in content
 
 
+def test_registration_outcome_created(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        netuid=129,
+        events=[{"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [129, 1]}],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**Subnet 129**" in content
+    assert "**outcome**: created — netuid `129`" in content
+
+
+def test_registration_outcome_queued(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "coldkey": "5Gxyz...",
+                    "hotkey": "5Gkey...",
+                    "mechid": 1,
+                    "identity": None,
+                    "lock_amount": 2_451_700_000_000,
+                    "median_subnet_alpha_price": 2**62,
+                    "registration_block": 6_000_000,
+                },
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 2451.7 TAO locked, alpha price snapshot 0.250000" in content
+
+
+def test_registration_outcome_queued_decodes_bits_price(registration_handler):
+    """On-chain U64F64 decodes as {"bits": N}; values from finney block 8693261."""
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "lock_amount": 707126707813,
+                    "median_subnet_alpha_price": {"bits": 109848439767197268},
+                },
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 707.126707813 TAO locked, alpha price snapshot 0.005955" in content
+
+
+def test_registration_outcome_queued_after_prune(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {"module_id": "SubtensorModule", "event_id": "NetworkRemoved", "attributes": 42},
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "lock_amount": 1_000_000_000,
+                    "median_subnet_alpha_price": 2**63,
+                },
+            },
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 1 TAO locked, alpha price snapshot 0.500000" in content
+    assert "**pruned to make room**: subnet `42`" in content
+
+
+def test_registration_without_outcome_events_renders_like_before(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(dto, extrinsic_index=0, address="5Gxyz...")
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**" not in content
+    assert "**Pending netuid**" in content
+    assert "**Global**" not in content
+    assert "**signer**: `5Gxyz...`" in content
+
+
+def test_registration_outcome_malformed_attributes_fall_back(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": ["unexpected", "positional"],
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — N/A TAO locked, alpha price snapshot N/A" in content
+    assert "**pruned to make room**" not in content
+
+
+def test_registration_outcome_survives_sudo_unwrap(registration_handler):
+    """The outer extrinsic's events must survive sudo-unwrapping into the outcome line."""
+    ext = {
+        "call_module": "Sudo",
+        "call_function": "sudo",
+        "success": True,
+        "netuid": None,
+        "extrinsic_index": 0,
+        "extrinsic_hash": "0xabc",
+        "address": "5Gsudo...",
+        "events": [{"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [7, 1]}],
+        "call_args": [
+            {
+                "name": "call",
+                "type": "RuntimeCall",
+                "value": {
+                    "call_module": "SubtensorModule",
+                    "call_function": "register_network",
+                    "call_args": [{"name": "hotkey", "type": "AccountId", "value": "5Gkey..."}],
+                },
+            }
+        ],
+    }
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: created — netuid `7`" in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 
