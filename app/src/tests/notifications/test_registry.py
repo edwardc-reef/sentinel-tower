@@ -248,6 +248,41 @@ def test_dispatch_sudo_wrapped_dissolve_network_routes_to_dissolution_handler():
     assert sudo_ch.payloads == []
 
 
+def test_dispatch_sudo_wrapped_register_network_routes_to_registration_handler():
+    """Sudo-wrapped register_network goes to the registration handler with events intact."""
+    registration_handler, registration_ch = _make_handler(
+        ["SubtensorModule:register_network", "SubtensorModule:register_network_with_identity"]
+    )
+    sudo_handler, sudo_ch = _make_handler(["Sudo"])
+    registry_module._registry.extend([registration_handler, sudo_handler])
+
+    extrinsics = [
+        {
+            "call_module": "Sudo",
+            "call_function": "sudo",
+            "success": True,
+            "netuid": None,
+            "events": [{"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [7, 1]}],
+            "call_args": [
+                {
+                    "name": "call",
+                    "type": "RuntimeCall",
+                    "value": {
+                        "call_module": "SubtensorModule",
+                        "call_function": "register_network",
+                        "call_args": [{"name": "hotkey", "type": "AccountId", "value": "5Gkey..."}],
+                    },
+                }
+            ],
+        }
+    ]
+    count = registry_module.dispatch_block_notifications(100, extrinsics)
+
+    assert count == 1
+    assert len(registration_ch.payloads) == 1
+    assert sudo_ch.payloads == []
+
+
 def test_dispatch_groups_multiple_extrinsics_per_handler():
     admin_handler, admin_ch = _make_handler(["AdminUtils"])
     registry_module._registry.append(admin_handler)
