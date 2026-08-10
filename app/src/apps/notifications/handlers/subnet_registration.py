@@ -4,6 +4,9 @@ from apps.notifications.base import ExtrinsicNotification
 from apps.notifications.channels import DiscordWebhookChannel
 from apps.notifications.registry import register
 
+RAO_PER_TAO = 10**9
+U64F64_SCALE = 2**64
+
 
 @register
 class SubnetRegistrationNotification(ExtrinsicNotification):
@@ -70,15 +73,24 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
         coldkey until a netuid frees up. Pre-root-reborn blocks carry neither
         event, in which case no outcome line is rendered.
         """
-        added = None
+        added = queued = None
         for event in extrinsic.get("events") or []:
             if not isinstance(event, dict) or event.get("module_id") != "SubtensorModule":
                 continue
-            if event.get("event_id") == "NetworkAdded":
+            event_id = event.get("event_id")
+            if event_id == "NetworkAdded":
                 added = event
+            elif event_id == "NetworkRegistrationQueued":
+                queued = event
         if added is not None:
             netuid = self._event_netuid(added)
             return [f"**outcome**: created — netuid `{self.format_value(netuid)}`"]
+        if queued is not None:
+            attrs = queued.get("attributes")
+            attrs = attrs if isinstance(attrs, dict) else {}
+            lock = self._format_tao(attrs.get("lock_amount"))
+            price = self._format_u64f64(attrs.get("median_subnet_alpha_price"))
+            return [f"**outcome**: queued — {lock} TAO locked, alpha price snapshot {price}"]
         return []
 
     @staticmethod
@@ -90,3 +102,17 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
         if isinstance(attrs, (list, tuple)):
             return attrs[0] if attrs else None
         return attrs
+
+    @staticmethod
+    def _format_tao(value: Any) -> str:
+        """Render a rao amount as TAO, falling back to raw display for unexpected types."""
+        if isinstance(value, int) and not isinstance(value, bool):
+            return f"{value / RAO_PER_TAO:.9f}".rstrip("0").rstrip(".")
+        return ExtrinsicNotification.format_value(value)
+
+    @staticmethod
+    def _format_u64f64(value: Any) -> str:
+        """Render a U64F64 fixed-point (raw bits) as a decimal, falling back to raw display."""
+        if isinstance(value, int) and not isinstance(value, bool):
+            return f"{value / U64F64_SCALE:.6f}"
+        return ExtrinsicNotification.format_value(value)

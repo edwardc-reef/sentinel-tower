@@ -105,6 +105,32 @@ def test_registration_outcome_created(registration_handler):
     assert "**outcome**: created — netuid `129`" in content
 
 
+def test_registration_outcome_queued(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "coldkey": "5Gxyz...",
+                    "hotkey": "5Gkey...",
+                    "mechid": 1,
+                    "identity": None,
+                    "lock_amount": 2_451_700_000_000,
+                    "median_subnet_alpha_price": 2**62,
+                    "registration_block": 6_000_000,
+                },
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 2451.7 TAO locked, alpha price snapshot 0.250000" in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 
