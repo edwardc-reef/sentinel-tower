@@ -43,7 +43,7 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
         address = extrinsic.get("address", "N/A")
         extrinsic_hash = extrinsic.get("extrinsic_hash", "N/A")
 
-        parts = [f"`{call_function}`", f"**signer**: `{address}`"]
+        parts = [f"`{call_function}`", *self._outcome_lines(extrinsic), f"**signer**: `{address}`"]
 
         for arg in call_args:
             name = arg.get("name", "")
@@ -60,3 +60,33 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
 
         parts.append(f"**hash**: `{extrinsic_hash}`")
         return "\n".join(parts)
+
+    def _outcome_lines(self, extrinsic: dict[str, Any]) -> list[str]:
+        """Describe the registration outcome recorded in the attached events.
+
+        Since subtensor root-reborn (#2968), a successful register_network no
+        longer implies a subnet was created: NetworkAdded means immediate
+        creation; NetworkRegistrationQueued means the lock cost is held on the
+        coldkey until a netuid frees up. Pre-root-reborn blocks carry neither
+        event, in which case no outcome line is rendered.
+        """
+        added = None
+        for event in extrinsic.get("events") or []:
+            if not isinstance(event, dict) or event.get("module_id") != "SubtensorModule":
+                continue
+            if event.get("event_id") == "NetworkAdded":
+                added = event
+        if added is not None:
+            netuid = self._event_netuid(added)
+            return [f"**outcome**: created — netuid `{self.format_value(netuid)}`"]
+        return []
+
+    @staticmethod
+    def _event_netuid(event: dict[str, Any]) -> Any:
+        """Netuid from event attributes: named dict, positional list/tuple, or bare value."""
+        attrs = event.get("attributes")
+        if isinstance(attrs, dict):
+            return attrs.get("netuid")
+        if isinstance(attrs, (list, tuple)):
+            return attrs[0] if attrs else None
+        return attrs

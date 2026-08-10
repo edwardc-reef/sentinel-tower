@@ -91,6 +91,20 @@ def test_registration_format_decodes_identity(registration_handler):
     assert "**github_repo**: https://github.com/example" in content
 
 
+def test_registration_outcome_created(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        netuid=129,
+        events=[{"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [129, 1]}],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**Subnet 129**" in content
+    assert "**outcome**: created — netuid `129`" in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 
