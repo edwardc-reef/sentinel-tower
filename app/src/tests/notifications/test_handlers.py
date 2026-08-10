@@ -131,6 +131,29 @@ def test_registration_outcome_queued(registration_handler):
     assert "**outcome**: queued — 2451.7 TAO locked, alpha price snapshot 0.250000" in content
 
 
+def test_registration_outcome_queued_after_prune(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {"module_id": "SubtensorModule", "event_id": "NetworkRemoved", "attributes": 42},
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": {
+                    "lock_amount": 1_000_000_000,
+                    "median_subnet_alpha_price": 2**63,
+                },
+            },
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — 1 TAO locked, alpha price snapshot 0.500000" in content
+    assert "**pruned to make room**: subnet `42`" in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 

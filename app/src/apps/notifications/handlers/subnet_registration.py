@@ -70,10 +70,11 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
         Since subtensor root-reborn (#2968), a successful register_network no
         longer implies a subnet was created: NetworkAdded means immediate
         creation; NetworkRegistrationQueued means the lock cost is held on the
-        coldkey until a netuid frees up. Pre-root-reborn blocks carry neither
-        event, in which case no outcome line is rendered.
+        coldkey until a netuid frees up, with NetworkRemoved marking a subnet
+        pruned to make room. Pre-root-reborn blocks carry none of these
+        events, in which case no outcome line is rendered.
         """
-        added = queued = None
+        added = queued = removed = None
         for event in extrinsic.get("events") or []:
             if not isinstance(event, dict) or event.get("module_id") != "SubtensorModule":
                 continue
@@ -82,6 +83,8 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
                 added = event
             elif event_id == "NetworkRegistrationQueued":
                 queued = event
+            elif event_id == "NetworkRemoved":
+                removed = event
         if added is not None:
             netuid = self._event_netuid(added)
             return [f"**outcome**: created — netuid `{self.format_value(netuid)}`"]
@@ -90,7 +93,11 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
             attrs = attrs if isinstance(attrs, dict) else {}
             lock = self._format_tao(attrs.get("lock_amount"))
             price = self._format_u64f64(attrs.get("median_subnet_alpha_price"))
-            return [f"**outcome**: queued — {lock} TAO locked, alpha price snapshot {price}"]
+            lines = [f"**outcome**: queued — {lock} TAO locked, alpha price snapshot {price}"]
+            if removed is not None:
+                pruned = self._event_netuid(removed)
+                lines.append(f"**pruned to make room**: subnet `{self.format_value(pruned)}`")
+            return lines
         return []
 
     @staticmethod
