@@ -184,6 +184,34 @@ def test_registration_outcome_malformed_attributes_fall_back(registration_handle
     assert "**pruned to make room**" not in content
 
 
+def test_registration_outcome_survives_sudo_unwrap(registration_handler):
+    """The outer extrinsic's events must survive sudo-unwrapping into the outcome line."""
+    ext = {
+        "call_module": "Sudo",
+        "call_function": "sudo",
+        "success": True,
+        "netuid": None,
+        "extrinsic_index": 0,
+        "extrinsic_hash": "0xabc",
+        "address": "5Gsudo...",
+        "events": [{"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [7, 1]}],
+        "call_args": [
+            {
+                "name": "call",
+                "type": "RuntimeCall",
+                "value": {
+                    "call_module": "SubtensorModule",
+                    "call_function": "register_network",
+                    "call_args": [{"name": "hotkey", "type": "AccountId", "value": "5Gkey..."}],
+                },
+            }
+        ],
+    }
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: created — netuid `7`" in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 

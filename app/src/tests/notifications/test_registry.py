@@ -249,7 +249,7 @@ def test_dispatch_sudo_wrapped_dissolve_network_routes_to_dissolution_handler():
 
 
 def test_dispatch_sudo_wrapped_register_network_routes_to_registration_handler():
-    """Sudo-wrapped register_network goes to the registration handler with events intact."""
+    """Sudo-wrapped register_network goes to the registration handler, not the Sudo catch-all."""
     registration_handler, registration_ch = _make_handler(
         ["SubtensorModule:register_network", "SubtensorModule:register_network_with_identity"]
     )
