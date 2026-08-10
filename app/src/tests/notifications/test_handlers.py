@@ -154,6 +154,36 @@ def test_registration_outcome_queued_after_prune(registration_handler):
     assert "**pruned to make room**: subnet `42`" in content
 
 
+def test_registration_without_outcome_events_renders_like_before(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(dto, extrinsic_index=0, address="5Gxyz...")
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**" not in content
+    assert "**Pending netuid**" in content
+    assert "**Global**" not in content
+    assert "**signer**: `5Gxyz...`" in content
+
+
+def test_registration_outcome_malformed_attributes_fall_back(registration_handler):
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Gkey...")
+    ext = flatten_extrinsic(
+        dto,
+        extrinsic_index=0,
+        events=[
+            {
+                "module_id": "SubtensorModule",
+                "event_id": "NetworkRegistrationQueued",
+                "attributes": ["unexpected", "positional"],
+            }
+        ],
+    )
+    content = registration_handler.format_message(200, [ext])["content"]
+
+    assert "**outcome**: queued — N/A TAO locked, alpha price snapshot N/A" in content
+    assert "**pruned to make room**" not in content
+
+
 # ── ColdkeySwapNotification ───────────────────────────────────────────
 
 

@@ -32,7 +32,7 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
             self.group_by_netuid(unwrapped).items(),
             key=lambda x: (x[0] is None, x[0]),
         ):
-            lines.append(f"**Subnet {netuid}**" if netuid is not None else "**Global**")
+            lines.append(f"**Subnet {netuid}**" if netuid is not None else "**Pending netuid**")
             for ext in group:
                 lines.append(self._format_registration(ext))
             lines.append("")
