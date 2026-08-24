@@ -108,7 +108,8 @@ def dispatch_block_event_notifications(block_number: int, events: list[dict[str,
 
     Events are matched on ``module_id``/``event_id``, grouped per handler,
     and sent as a single message per handler. Unmatched events are ignored
-    (blocks routinely carry 100+ block-level events).
+    (blocks routinely carry 100+ block-level events). Each event goes to
+    the first matching handler in registration order.
 
     Returns the total number of events notified.
     """
