@@ -2,6 +2,9 @@
 
 from typing import Any, ClassVar
 
+import pytest
+
+from apps.notifications import registry as registry_module
 from apps.notifications.base import BlockEventNotification
 from apps.notifications.channels import NotificationChannel
 
@@ -104,3 +107,83 @@ def test_event_netuid_bare_value_attrs():
 def test_event_netuid_empty_attrs():
     assert BlockEventNotification.event_netuid({"attributes": []}) is None
     assert BlockEventNotification.event_netuid({"attributes": None}) is None
+
+
+# ── event registry & dispatch ──────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_event_registry():
+    """Reset the global event registry before each test."""
+    original = registry_module._event_registry[:]
+    registry_module._event_registry.clear()
+    yield
+    registry_module._event_registry.clear()
+    registry_module._event_registry.extend(original)
+
+
+def test_register_event_adds_instance_and_returns_class():
+    @registry_module.register_event
+    class MyEventNotification(BlockEventNotification):
+        events: ClassVar[list[str]] = ["SubtensorModule:SubnetOwnerChanged"]
+        channel: ClassVar = FakeChannel()
+
+        def format_message(self, block_number, events):
+            return {}
+
+    assert len(registry_module._event_registry) == 1
+    assert isinstance(registry_module._event_registry[0], MyEventNotification)
+    assert MyEventNotification.__name__ == "MyEventNotification"
+
+
+def test_dispatch_groups_events_per_handler():
+    owner_handler, owner_channel = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    added_handler, added_channel = _make_handler(["SubtensorModule:NetworkAdded"])
+    registry_module._event_registry.extend([owner_handler, added_handler])
+
+    events = [
+        OWNER_CHANGED_EVENT,
+        {**OWNER_CHANGED_EVENT, "attributes": {**OWNER_CHANGED_EVENT["attributes"], "netuid": 5}},
+        {"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [42, 0]},
+    ]
+    total = registry_module.dispatch_block_event_notifications(8843504, events)
+
+    assert total == 3
+    assert len(owner_channel.payloads) == 1  # two owner events, one grouped message
+    assert len(added_channel.payloads) == 1
+
+
+def test_dispatch_ignores_unmatched_events():
+    handler, channel = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    registry_module._event_registry.append(handler)
+
+    events = [{"module_id": "System", "event_id": "NewAccount", "attributes": None}]
+    assert registry_module.dispatch_block_event_notifications(100, events) == 0
+    assert channel.payloads == []
+
+
+def test_dispatch_empty_events_returns_zero():
+    handler, _ = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    registry_module._event_registry.append(handler)
+    assert registry_module.dispatch_block_event_notifications(100, []) == 0
+
+
+def test_dispatch_isolates_handler_exceptions():
+    class ExplodingHandler(BlockEventNotification):
+        events: ClassVar[list[str]] = ["SubtensorModule:SubnetOwnerChanged"]
+        channel: ClassVar = FakeChannel()
+
+        def format_message(self, block_number, events):
+            raise RuntimeError("boom")
+
+    ok_handler, ok_channel = _make_handler(["SubtensorModule:NetworkAdded"])
+    registry_module._event_registry.extend([ExplodingHandler(), ok_handler])
+
+    events = [
+        OWNER_CHANGED_EVENT,
+        {"module_id": "SubtensorModule", "event_id": "NetworkAdded", "attributes": [42, 0]},
+    ]
+    total = registry_module.dispatch_block_event_notifications(8843504, events)
+
+    assert total == 1  # exploding handler contributes nothing, ok handler still delivers
+    assert len(ok_channel.payloads) == 1
