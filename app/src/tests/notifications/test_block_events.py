@@ -7,6 +7,7 @@ import pytest
 from apps.notifications import registry as registry_module
 from apps.notifications.base import BlockEventNotification
 from apps.notifications.channels import NotificationChannel
+from apps.notifications.handlers.subnet_owner_change import SubnetOwnerChangeNotification
 
 # Real payload observed on finney block 8843504 (subnet 3 owner reassigned by lock conviction).
 OWNER_CHANGED_EVENT: dict[str, Any] = {
@@ -187,3 +188,44 @@ def test_dispatch_isolates_handler_exceptions():
 
     assert total == 1  # exploding handler contributes nothing, ok handler still delivers
     assert len(ok_channel.payloads) == 1
+
+
+# ── SubnetOwnerChangeNotification ──────────────────────────────────────
+
+
+def test_owner_change_matches_only_subnet_owner_changed():
+    handler = SubnetOwnerChangeNotification()
+    assert handler.matches("SubtensorModule", "SubnetOwnerChanged") is True
+    assert handler.matches("SubtensorModule", "NetworkAdded") is False
+
+
+def test_owner_change_message_format():
+    handler = SubnetOwnerChangeNotification()
+    payload = handler.format_message(8843504, [OWNER_CHANGED_EVENT])
+
+    content = payload["content"]
+    assert "**Block #8843504**" in content
+    assert "**Subnet 3**" in content
+    assert "lock conviction" in content
+    assert "5FUJoAsY5TWfs1FGFtscC5QUuarJMCWYwYzEftyGAeH7pUqK" in content
+    assert "5GsGUrd21bnkNxQsH2grv474y4gcDwCmp5xJ72KeokspZ2bg" in content
+    assert "https://taostats.io/block/8843504?network=finney" in content
+    assert payload["flags"] == 1 << 2
+
+
+def test_owner_change_message_multiple_events():
+    handler = SubnetOwnerChangeNotification()
+    second = {
+        **OWNER_CHANGED_EVENT,
+        "attributes": {"netuid": 8, "old_coldkey": "5Old...", "new_coldkey": "5New..."},
+    }
+    content = handler.format_message(8843504, [OWNER_CHANGED_EVENT, second])["content"]
+    assert "**Subnet 3**" in content
+    assert "**Subnet 8**" in content
+
+
+def test_owner_change_message_tolerates_malformed_attributes():
+    handler = SubnetOwnerChangeNotification()
+    content = handler.format_message(100, [{**OWNER_CHANGED_EVENT, "attributes": None}])["content"]
+    assert "**Block #100**" in content
+    assert "N/A" in content
