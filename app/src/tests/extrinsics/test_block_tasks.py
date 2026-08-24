@@ -300,3 +300,26 @@ def test_reprocessed_block_skips_event_dispatch(mock_dispatch, mock_event_dispat
 
     store_block_extrinsics(300, provider)  # reprocess: extrinsic hash already stored
     mock_event_dispatch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=1)
+@patch("apps.extrinsics.block_tasks.dispatch_block_event_notifications", side_effect=RuntimeError("boom"))
+@patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
+def test_event_dispatch_failure_does_not_break_ingestion(mock_dispatch, mock_event_dispatch, mock_artifact):
+    """A raising block-event dispatcher must not fail block ingestion."""
+    dto = AnnounceColdkeySwapExtrinsicDTOFactory.build_for_hash("0xabc123")
+    raw = _to_raw(dto, extrinsic_hash="0xdeadbeef13", address="5Gold...")
+
+    provider = (
+        FakeBlockchainProvider()
+        .with_block(400, "0xblockhash13")
+        .with_extrinsics("0xblockhash13", [raw])
+        .with_events("0xblockhash13", [_success_event(0), _block_level_event()])
+    )
+
+    result = store_block_extrinsics(400, provider)
+
+    assert result["db_count"] == 1
+    assert Extrinsic.objects.filter(extrinsic_hash="0xdeadbeef13").exists()
+    mock_event_dispatch.assert_called_once()
