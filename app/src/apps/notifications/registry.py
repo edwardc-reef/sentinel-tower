@@ -2,7 +2,7 @@ from typing import Any
 
 import structlog
 
-from apps.notifications.base import ExtrinsicNotification
+from apps.notifications.base import BlockEventNotification, ExtrinsicNotification
 
 logger = structlog.get_logger()
 
@@ -84,6 +84,60 @@ def dispatch_block_notifications(block_number: int, extrinsics: list[dict[str, A
                 handler=handler.__class__.__name__,
                 block_number=block_number,
                 extrinsic_count=len(grouped),
+            )
+
+    return total_notified
+
+
+_event_registry: list[BlockEventNotification] = []
+
+
+def register_event(cls: type[BlockEventNotification]) -> type[BlockEventNotification]:
+    """Class decorator that registers a block-event notification handler."""
+    _event_registry.append(cls())
+    return cls
+
+
+def get_event_registry() -> list[BlockEventNotification]:
+    """Return the list of registered block-event notification handlers."""
+    return list(_event_registry)
+
+
+def dispatch_block_event_notifications(block_number: int, events: list[dict[str, Any]]) -> int:
+    """Dispatch block-level events to matching notification handlers.
+
+    Events are matched on ``module_id``/``event_id``, grouped per handler,
+    and sent as a single message per handler. Unmatched events are ignored
+    (blocks routinely carry 100+ block-level events). Each event goes to
+    the first matching handler in registration order.
+
+    Returns the total number of events notified.
+    """
+    if not events:
+        return 0
+
+    handler_groups: dict[BlockEventNotification, list[dict[str, Any]]] = {h: [] for h in _event_registry}
+
+    for event in events:
+        module_id = event.get("module_id", "")
+        event_id = event.get("event_id", "")
+        for handler in handler_groups:
+            if handler.matches(module_id, event_id):
+                handler_groups[handler].append(event)
+                break
+
+    total_notified = 0
+    for handler, grouped in handler_groups.items():
+        if not grouped:
+            continue
+        try:
+            total_notified += handler.notify(block_number, grouped)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Block event notification handler failed",
+                handler=handler.__class__.__name__,
+                block_number=block_number,
+                event_count=len(grouped),
             )
 
     return total_notified

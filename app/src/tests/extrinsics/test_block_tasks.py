@@ -201,3 +201,125 @@ def test_unavailable_block_raises(mock_dispatch, mock_artifact, extrinsics):
     assert Extrinsic.objects.filter(block_number=600).count() == 0
     mock_artifact.assert_not_called()
     mock_dispatch.assert_not_called()
+
+
+def _block_level_event(event_id: str = "SubnetOwnerChanged", attributes: object = None) -> dict:
+    """Build a block-level (hook-emitted) event with no extrinsic index."""
+    return {
+        "phase": "Initialization",
+        "extrinsic_idx": None,
+        "event_index": "0x078b",
+        "module_id": "SubtensorModule",
+        "event_id": event_id,
+        "attributes": attributes
+        if attributes is not None
+        else {
+            "netuid": 3,
+            "old_coldkey": "5FUJoAsY5TWfs1FGFtscC5QUuarJMCWYwYzEftyGAeH7pUqK",
+            "new_coldkey": "5GsGUrd21bnkNxQsH2grv474y4gcDwCmp5xJ72KeokspZ2bg",
+        },
+        "topics": [],
+    }
+
+
+@pytest.mark.django_db
+@patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=1)
+@patch("apps.extrinsics.block_tasks.dispatch_block_event_notifications")
+@patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
+def test_block_level_events_dispatched(mock_dispatch, mock_event_dispatch, mock_artifact):
+    """Hook-emitted events (extrinsic_idx=None) reach the block-event dispatcher."""
+    dto = AnnounceColdkeySwapExtrinsicDTOFactory.build_for_hash("0xabc123")
+    raw = _to_raw(dto, extrinsic_hash="0xdeadbeef10", address="5Gold...")
+
+    provider = (
+        FakeBlockchainProvider()
+        .with_block(8843504, "0xblockhash10")
+        .with_extrinsics("0xblockhash10", [raw])
+        .with_events("0xblockhash10", [_success_event(0), _block_level_event()])
+    )
+
+    store_block_extrinsics(8843504, provider)
+
+    mock_event_dispatch.assert_called_once()
+    block_number, events = mock_event_dispatch.call_args[0]
+    assert block_number == 8843504
+    assert len(events) == 1
+    assert events[0]["event_id"] == "SubnetOwnerChanged"
+    assert events[0]["extrinsic_idx"] is None
+    assert events[0]["attributes"]["netuid"] == 3
+
+
+@pytest.mark.django_db
+@patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=1)
+@patch("apps.extrinsics.block_tasks.dispatch_block_event_notifications")
+@patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
+def test_extrinsic_attached_events_not_dispatched_as_block_events(mock_dispatch, mock_event_dispatch, mock_artifact):
+    """Events attached to an extrinsic (e.g. synchronous NetworkAdded) stay out of the block-event path."""
+    dto = RegisterNetworkExtrinsicDTOFactory.build_for_hotkey("5Ghotkey...")
+    raw = _to_raw(dto, extrinsic_hash="0xdeadbeef11", address="5Gowner...")
+    attached_network_added = {
+        "phase": {"ApplyExtrinsic": 0},
+        "extrinsic_idx": 0,
+        "event_index": "0x0701",
+        "module_id": "SubtensorModule",
+        "event_id": "NetworkAdded",
+        "attributes": [42, 0],
+        "topics": [],
+    }
+
+    provider = (
+        FakeBlockchainProvider()
+        .with_block(201, "0xblockhash11")
+        .with_extrinsics("0xblockhash11", [raw])
+        .with_events("0xblockhash11", [attached_network_added, _success_event(0)])
+    )
+
+    store_block_extrinsics(201, provider)
+
+    mock_event_dispatch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=1)
+@patch("apps.extrinsics.block_tasks.dispatch_block_event_notifications")
+@patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
+def test_reprocessed_block_skips_event_dispatch(mock_dispatch, mock_event_dispatch, mock_artifact):
+    """A block whose extrinsics are already stored does not re-send event notifications."""
+    dto = AnnounceColdkeySwapExtrinsicDTOFactory.build_for_hash("0xabc123")
+    raw = _to_raw(dto, extrinsic_hash="0xdeadbeef12", address="5Gold...")
+
+    provider = (
+        FakeBlockchainProvider()
+        .with_block(300, "0xblockhash12")
+        .with_extrinsics("0xblockhash12", [raw])
+        .with_events("0xblockhash12", [_success_event(0), _block_level_event()])
+    )
+
+    store_block_extrinsics(300, provider)  # first pass: dispatches
+    mock_event_dispatch.reset_mock()
+
+    store_block_extrinsics(300, provider)  # reprocess: extrinsic hash already stored
+    mock_event_dispatch.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("apps.extrinsics.block_tasks.store_extrinsics_artifact", return_value=1)
+@patch("apps.extrinsics.block_tasks.dispatch_block_event_notifications", side_effect=RuntimeError("boom"))
+@patch("apps.extrinsics.block_tasks.dispatch_block_notifications")
+def test_event_dispatch_failure_does_not_break_ingestion(mock_dispatch, mock_event_dispatch, mock_artifact):
+    """A raising block-event dispatcher must not fail block ingestion."""
+    dto = AnnounceColdkeySwapExtrinsicDTOFactory.build_for_hash("0xabc123")
+    raw = _to_raw(dto, extrinsic_hash="0xdeadbeef13", address="5Gold...")
+
+    provider = (
+        FakeBlockchainProvider()
+        .with_block(400, "0xblockhash13")
+        .with_extrinsics("0xblockhash13", [raw])
+        .with_events("0xblockhash13", [_success_event(0), _block_level_event()])
+    )
+
+    result = store_block_extrinsics(400, provider)
+
+    assert result["db_count"] == 1
+    assert Extrinsic.objects.filter(extrinsic_hash="0xdeadbeef13").exists()
+    mock_event_dispatch.assert_called_once()

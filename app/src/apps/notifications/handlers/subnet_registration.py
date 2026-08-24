@@ -1,8 +1,8 @@
 from typing import Any, ClassVar
 
-from apps.notifications.base import ExtrinsicNotification
+from apps.notifications.base import BlockEventNotification, ExtrinsicNotification
 from apps.notifications.channels import DiscordWebhookChannel
-from apps.notifications.registry import register
+from apps.notifications.registry import register, register_event
 
 RAO_PER_TAO = 10**9
 U64F64_SCALE = 2**64
@@ -103,12 +103,7 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
     @staticmethod
     def _event_netuid(event: dict[str, Any]) -> Any:
         """Netuid from event attributes: named dict, positional list/tuple, or bare value."""
-        attrs = event.get("attributes")
-        if isinstance(attrs, dict):
-            return attrs.get("netuid")
-        if isinstance(attrs, (list, tuple)):
-            return attrs[0] if attrs else None
-        return attrs
+        return BlockEventNotification.event_netuid(event)
 
     @staticmethod
     def _format_tao(value: Any) -> str:
@@ -129,3 +124,29 @@ class SubnetRegistrationNotification(ExtrinsicNotification):
         if isinstance(value, int) and not isinstance(value, bool):
             return f"{value / U64F64_SCALE:.6f}"
         return ExtrinsicNotification.format_value(value)
+
+
+@register_event
+class SubnetRegistrationCompletedNotification(BlockEventNotification):
+    """Notification for queued subnet registrations completing in on_idle.
+
+    A block-level NetworkAdded (no extrinsic attached) means a registration
+    previously queued at SubnetLimit was finalized by
+    process_network_registration_queue. Synchronous NetworkAdded events are
+    attached to their register extrinsic and reported as an outcome line by
+    SubnetRegistrationNotification instead.
+    """
+
+    events: ClassVar[list[str]] = ["SubtensorModule:NetworkAdded"]
+    channel: ClassVar = DiscordWebhookChannel("DISCORD_SUBNET_REGISTRATION_WEBHOOK_URL")
+
+    def format_message(self, block_number: int, events: list[dict[str, Any]]) -> dict[str, Any]:
+        lines = [f"**Block #{block_number}**", ""]
+
+        for event in events:
+            netuid = self.event_netuid(event)
+            lines.append(f"**Subnet {netuid if netuid is not None else 'N/A'}** — queued registration completed")
+        lines.append("")
+
+        lines.append(f"[View on TaoStats]({self.taostats_block_link(block_number)})")
+        return {"content": "\n".join(lines), "flags": 1 << 2}

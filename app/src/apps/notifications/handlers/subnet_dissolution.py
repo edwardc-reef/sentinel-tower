@@ -1,8 +1,8 @@
 from typing import Any, ClassVar
 
-from apps.notifications.base import ExtrinsicNotification
+from apps.notifications.base import BlockEventNotification, ExtrinsicNotification
 from apps.notifications.channels import DiscordWebhookChannel
-from apps.notifications.registry import register
+from apps.notifications.registry import register, register_event
 
 
 @register
@@ -40,3 +40,26 @@ class SubnetDissolutionNotification(ExtrinsicNotification):
         if params:
             return f"`{call_function}` — " + ", ".join(params)
         return f"`{call_function}`"
+
+
+@register_event
+class SubnetDissolutionCleanupNotification(BlockEventNotification):
+    """Notification for dissolved-subnet storage cleanup finishing in on_idle.
+
+    The dissolve_network extrinsic itself is reported by
+    SubnetDissolutionNotification; this marks the deferred cleanup completing.
+    """
+
+    events: ClassVar[list[str]] = ["SubtensorModule:NetworkDissolveCleanupCompleted"]
+    channel: ClassVar = DiscordWebhookChannel("DISCORD_SUBNET_REGISTRATION_WEBHOOK_URL")
+
+    def format_message(self, block_number: int, events: list[dict[str, Any]]) -> dict[str, Any]:
+        lines = [f"**Block #{block_number}**", ""]
+
+        for event in events:
+            netuid = self.event_netuid(event)
+            lines.append(f"**Subnet {netuid if netuid is not None else 'N/A'}** — dissolution cleanup completed")
+        lines.append("")
+
+        lines.append(f"[View on TaoStats]({self.taostats_block_link(block_number)})")
+        return {"content": "\n".join(lines), "flags": 1 << 2}

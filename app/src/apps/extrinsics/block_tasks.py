@@ -2,13 +2,13 @@ import time
 from datetime import UTC, datetime
 
 import structlog
-from sentinel.v1.dto import ExtrinsicDTO
+from sentinel.v1.dto import EventDTO, ExtrinsicDTO
 from sentinel.v1.providers.base import BlockchainProvider
 from sentinel.v1.services.sentinel import sentinel_service
 
 from apps.extrinsics.hyperparam_service import enrich_extrinsics_with_previous_values
 from apps.extrinsics.models import Extrinsic
-from apps.notifications import dispatch_block_notifications
+from apps.notifications import dispatch_block_event_notifications, dispatch_block_notifications
 from project.core.services import JsonLinesStorage
 
 logger = structlog.get_logger()
@@ -133,7 +133,7 @@ def store_block_extrinsics(block_number: int, provider: BlockchainProvider) -> d
     )
 
     # Sync to Django models
-    db_count = sync_extrinsics_to_db(extrinsics, block_number, timestamp)
+    db_count = sync_extrinsics_to_db(extrinsics, block_number, timestamp, block_events=block.events)
     t4 = time.monotonic()
     logger.debug("DB sync completed", block_number=block_number, db_count=db_count, duration_s=round(t4 - t3, 3))
 
@@ -170,8 +170,13 @@ def store_extrinsics_artifact(extrinsics: list[ExtrinsicDTO], block_number: int,
     return len(extrinsics)
 
 
-def sync_extrinsics_to_db(extrinsics: list[ExtrinsicDTO], block_number: int, timestamp: int | None) -> int:
-    """Sync extrinsics to Django Extrinsic model."""
+def sync_extrinsics_to_db(
+    extrinsics: list[ExtrinsicDTO],
+    block_number: int,
+    timestamp: int | None,
+    block_events: list[EventDTO] | None = None,
+) -> int:
+    """Sync extrinsics to Django Extrinsic model and dispatch notifications."""
     if not extrinsics:
         return 0
 
@@ -230,6 +235,17 @@ def sync_extrinsics_to_db(extrinsics: list[ExtrinsicDTO], block_number: int, tim
         dispatch_block_notifications(block_number, enriched)
     except Exception:  # noqa: BLE001
         logger.exception("sync_extrinsics_to_db: notification dispatch failed", block_number=block_number)
+
+    # Block-level events (extrinsic_idx=None) come from runtime hooks, not
+    # extrinsics; dispatch them only on first-time processing so backfill or
+    # reprocessing never re-sends them (mirrors the hash dedup above).
+    if not existing_hashes and block_events:
+        block_level = [_sanitize_json(e.model_dump()) for e in block_events if e.extrinsic_idx is None]
+        if block_level:
+            try:
+                dispatch_block_event_notifications(block_number, block_level)  # type: ignore[arg-type]
+            except Exception:  # noqa: BLE001
+                logger.exception("sync_extrinsics_to_db: block event dispatch failed", block_number=block_number)
 
     t4 = time.monotonic()
     logger.debug(
