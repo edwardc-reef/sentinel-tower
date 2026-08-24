@@ -163,6 +163,73 @@ class ExtrinsicNotification(abc.ABC):
         return groups
 
 
+class BlockEventNotification(abc.ABC):
+    """Base class for block-level event notifications.
+
+    Handles chain events emitted by runtime hooks (on_initialize coinbase,
+    on_idle) rather than by user extrinsics. Such events carry
+    ``extrinsic_idx: None`` and are invisible to the extrinsic-driven
+    pipeline above.
+
+    Attributes:
+        events: Patterns to match, e.g. ["SubtensorModule"] (whole module)
+                or ["SubtensorModule:SubnetOwnerChanged"] (specific event).
+        channel: Notification channel to deliver to.
+    """
+
+    events: ClassVar[list[str]]
+    channel: ClassVar[NotificationChannel]
+
+    def matches(self, module_id: str, event_id: str) -> bool:
+        """Check if this notification handles the given module/event."""
+        for pattern in self.events:
+            if ":" in pattern:
+                p_module, p_event = pattern.split(":", 1)
+                if module_id == p_module and event_id == p_event:
+                    return True
+            elif module_id == pattern:
+                return True
+        return False
+
+    @abc.abstractmethod
+    def format_message(self, block_number: int, events: list[dict[str, Any]]) -> dict[str, Any]:
+        """Build the notification payload for a group of matched events."""
+        ...
+
+    def notify(self, block_number: int, events: list[dict[str, Any]]) -> int:
+        """Format and send matched events to the channel. Returns count notified."""
+        if not events:
+            return 0
+
+        payload = self.format_message(block_number, events)
+        sent = self.channel.send(payload)
+
+        if sent:
+            logger.info(
+                "Block event notification sent",
+                notification=self.__class__.__name__,
+                block_number=block_number,
+                event_count=len(events),
+            )
+            return len(events)
+        return 0
+
+    @staticmethod
+    def taostats_block_link(block_number: int) -> str:
+        """Build a TaoStats block URL (block-level events have no extrinsic index)."""
+        return f"https://taostats.io/block/{block_number}?network=finney"
+
+    @staticmethod
+    def event_netuid(event: dict[str, Any]) -> Any:
+        """Netuid from event attributes: named dict, positional list/tuple, or bare value."""
+        attrs = event.get("attributes")
+        if isinstance(attrs, dict):
+            return attrs.get("netuid")
+        if isinstance(attrs, (list, tuple)):
+            return attrs[0] if attrs else None
+        return attrs
+
+
 class SubnetRoutedNotification(ExtrinsicNotification):
     """Base for notifications routed to per-subnet webhook URLs from the database.
 

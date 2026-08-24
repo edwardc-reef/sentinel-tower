@@ -1,0 +1,106 @@
+"""Tests for the block-level event notification path (BlockEventNotification)."""
+
+from typing import Any, ClassVar
+
+from apps.notifications.base import BlockEventNotification
+from apps.notifications.channels import NotificationChannel
+
+# Real payload observed on finney block 8843504 (subnet 3 owner reassigned by lock conviction).
+OWNER_CHANGED_EVENT: dict[str, Any] = {
+    "phase": "Initialization",
+    "extrinsic_idx": None,
+    "event_index": 7,
+    "module_id": "SubtensorModule",
+    "event_id": "SubnetOwnerChanged",
+    "attributes": {
+        "netuid": 3,
+        "old_coldkey": "5FUJoAsY5TWfs1FGFtscC5QUuarJMCWYwYzEftyGAeH7pUqK",
+        "new_coldkey": "5GsGUrd21bnkNxQsH2grv474y4gcDwCmp5xJ72KeokspZ2bg",
+    },
+    "topics": [],
+}
+
+
+class FakeChannel(NotificationChannel):
+    def __init__(self, *, succeed: bool = True):
+        self.payloads: list[dict] = []
+        self.should_succeed = succeed
+
+    def send(self, payload: dict) -> bool:
+        self.payloads.append(payload)
+        return self.should_succeed
+
+
+def _make_handler(event_patterns: list[str], channel: FakeChannel | None = None):
+    """Create a concrete block-event handler with given patterns."""
+    ch = channel or FakeChannel()
+
+    class Handler(BlockEventNotification):
+        events: ClassVar[list[str]] = event_patterns
+        channel: ClassVar = ch
+
+        def format_message(self, block_number: int, events: list[dict[str, Any]]) -> dict[str, Any]:
+            return {"content": f"{self.__class__.__name__}: {len(events)}"}
+
+    return Handler(), ch
+
+
+# ── matches() ──────────────────────────────────────────────────────────
+
+
+def test_matches_specific_event_pattern():
+    handler, _ = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    assert handler.matches("SubtensorModule", "SubnetOwnerChanged") is True
+    assert handler.matches("SubtensorModule", "NetworkAdded") is False
+    assert handler.matches("System", "SubnetOwnerChanged") is False
+
+
+def test_matches_whole_module_pattern():
+    handler, _ = _make_handler(["SubtensorModule"])
+    assert handler.matches("SubtensorModule", "AnythingAtAll") is True
+    assert handler.matches("System", "ExtrinsicSuccess") is False
+
+
+# ── notify() ───────────────────────────────────────────────────────────
+
+
+def test_notify_sends_payload_and_returns_count():
+    handler, channel = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    count = handler.notify(8843504, [OWNER_CHANGED_EVENT])
+    assert count == 1
+    assert len(channel.payloads) == 1
+
+
+def test_notify_empty_events_returns_zero_without_sending():
+    handler, channel = _make_handler(["SubtensorModule:SubnetOwnerChanged"])
+    assert handler.notify(8843504, []) == 0
+    assert channel.payloads == []
+
+
+def test_notify_channel_failure_returns_zero():
+    handler, _ = _make_handler(["SubtensorModule:SubnetOwnerChanged"], FakeChannel(succeed=False))
+    assert handler.notify(8843504, [OWNER_CHANGED_EVENT]) == 0
+
+
+# ── helpers ────────────────────────────────────────────────────────────
+
+
+def test_taostats_block_link():
+    assert BlockEventNotification.taostats_block_link(8843504) == "https://taostats.io/block/8843504?network=finney"
+
+
+def test_event_netuid_named_dict_attrs():
+    assert BlockEventNotification.event_netuid(OWNER_CHANGED_EVENT) == 3
+
+
+def test_event_netuid_positional_attrs():
+    assert BlockEventNotification.event_netuid({"attributes": [42, 0]}) == 42
+
+
+def test_event_netuid_bare_value_attrs():
+    assert BlockEventNotification.event_netuid({"attributes": 7}) == 7
+
+
+def test_event_netuid_empty_attrs():
+    assert BlockEventNotification.event_netuid({"attributes": []}) is None
+    assert BlockEventNotification.event_netuid({"attributes": None}) is None
