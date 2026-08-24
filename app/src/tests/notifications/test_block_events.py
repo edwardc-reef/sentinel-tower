@@ -8,6 +8,7 @@ from apps.notifications import registry as registry_module
 from apps.notifications.base import BlockEventNotification
 from apps.notifications.channels import NotificationChannel
 from apps.notifications.handlers.subnet_owner_change import SubnetOwnerChangeNotification
+from apps.notifications.handlers.subnet_registration import SubnetRegistrationCompletedNotification
 
 # Real payload observed on finney block 8843504 (subnet 3 owner reassigned by lock conviction).
 OWNER_CHANGED_EVENT: dict[str, Any] = {
@@ -229,3 +230,65 @@ def test_owner_change_message_tolerates_malformed_attributes():
     content = handler.format_message(100, [{**OWNER_CHANGED_EVENT, "attributes": None}])["content"]
     assert "**Block #100**" in content
     assert "N/A" in content
+
+
+# ── SubnetRegistrationCompletedNotification ────────────────────────────
+
+NETWORK_ADDED_EVENT: dict[str, Any] = {
+    "phase": "Finalization",
+    "extrinsic_idx": None,
+    "event_index": 7,
+    "module_id": "SubtensorModule",
+    "event_id": "NetworkAdded",
+    "attributes": [42, 0],  # positional: (netuid, mechid)
+    "topics": [],
+}
+
+
+def test_registration_completed_matches_only_network_added():
+    handler = SubnetRegistrationCompletedNotification()
+    assert handler.matches("SubtensorModule", "NetworkAdded") is True
+    assert handler.matches("SubtensorModule", "SubnetOwnerChanged") is False
+
+
+def test_registration_completed_message_format():
+    handler = SubnetRegistrationCompletedNotification()
+    payload = handler.format_message(8850000, [NETWORK_ADDED_EVENT])
+
+    content = payload["content"]
+    assert "**Block #8850000**" in content
+    assert "**Subnet 42**" in content
+    assert "queued registration completed" in content
+    assert "https://taostats.io/block/8850000?network=finney" in content
+    assert payload["flags"] == 1 << 2
+
+
+def test_event_routing_with_multiple_registered_handlers():
+    """SubnetOwnerChanged and block-level NetworkAdded route to their own handlers."""
+    owner_handler = SubnetOwnerChangeNotification()
+    owner_channel = FakeChannel()
+    owner_handler.channel = owner_channel  # type: ignore[misc]
+    completed_handler = SubnetRegistrationCompletedNotification()
+    completed_channel = FakeChannel()
+    completed_handler.channel = completed_channel  # type: ignore[misc]
+    registry_module._event_registry.extend([owner_handler, completed_handler])
+
+    total = registry_module.dispatch_block_event_notifications(8843504, [OWNER_CHANGED_EVENT, NETWORK_ADDED_EVENT])
+
+    assert total == 2
+    assert len(owner_channel.payloads) == 1
+    assert "lock conviction" in owner_channel.payloads[0]["content"]
+    assert len(completed_channel.payloads) == 1
+    assert "queued registration completed" in completed_channel.payloads[0]["content"]
+
+
+def test_dispatch_first_matching_handler_wins():
+    """An event goes only to the first matching handler in registration order."""
+    module_wide, module_wide_channel = _make_handler(["SubtensorModule"])
+    specific, specific_channel = _make_handler(["SubtensorModule:NetworkAdded"])
+    registry_module._event_registry.extend([module_wide, specific])
+
+    registry_module.dispatch_block_event_notifications(100, [NETWORK_ADDED_EVENT])
+
+    assert len(module_wide_channel.payloads) == 1
+    assert specific_channel.payloads == []
