@@ -7,6 +7,7 @@ import pytest
 from apps.notifications import registry as registry_module
 from apps.notifications.base import BlockEventNotification
 from apps.notifications.channels import NotificationChannel
+from apps.notifications.handlers.subnet_dissolution import SubnetDissolutionCleanupNotification
 from apps.notifications.handlers.subnet_owner_change import SubnetOwnerChangeNotification
 from apps.notifications.handlers.subnet_registration import SubnetRegistrationCompletedNotification
 
@@ -292,3 +293,34 @@ def test_dispatch_first_matching_handler_wins():
 
     assert len(module_wide_channel.payloads) == 1
     assert specific_channel.payloads == []
+
+
+# ── SubnetDissolutionCleanupNotification ───────────────────────────────
+
+CLEANUP_COMPLETED_EVENT: dict[str, Any] = {
+    "phase": "Finalization",
+    "extrinsic_idx": None,
+    "event_index": 7,
+    "module_id": "SubtensorModule",
+    "event_id": "NetworkDissolveCleanupCompleted",
+    "attributes": {"netuid": 7},
+    "topics": [],
+}
+
+
+def test_dissolution_cleanup_matches_only_cleanup_completed():
+    handler = SubnetDissolutionCleanupNotification()
+    assert handler.matches("SubtensorModule", "NetworkDissolveCleanupCompleted") is True
+    assert handler.matches("SubtensorModule", "NetworkRemoved") is False
+
+
+def test_dissolution_cleanup_message_format():
+    handler = SubnetDissolutionCleanupNotification()
+    payload = handler.format_message(8860000, [CLEANUP_COMPLETED_EVENT])
+
+    content = payload["content"]
+    assert "**Block #8860000**" in content
+    assert "**Subnet 7**" in content
+    assert "dissolution cleanup completed" in content
+    assert "https://taostats.io/block/8860000?network=finney" in content
+    assert payload["flags"] == 1 << 2
