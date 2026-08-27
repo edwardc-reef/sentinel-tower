@@ -121,8 +121,9 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_NAME=Sentinel Tower
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # read-only role; Grafana never holds the application/superuser password
+      - GRAFANA_READER_USER=${GRAFANA_READER_USER}
+      - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD}
       - BLOCK_END=${BLOCK_END:-5000000}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

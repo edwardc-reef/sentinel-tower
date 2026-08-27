@@ -600,8 +600,9 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_DATAPROXY_TIMEOUT=120
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # read-only role; Grafana never holds the application/superuser password
+      - GRAFANA_READER_USER=${GRAFANA_READER_USER}
+      - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
