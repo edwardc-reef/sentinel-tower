@@ -1,7 +1,7 @@
 {
-  "template": "https://github.com/reef-technologies/cookiecutter-rt-django",
+  "template": "https://github.com/edwardc-reef/cookiecutter-rt-django",
   "commit": "dc7a6562340edcf1f2b791ce6eae8dc9e488f3ef",
-  "checkout": null,
+  "checkout": "postgres-monitoring",
   "context": {
     "cookiecutter": {
       "repostory_name": "bittensor_sentinel",
