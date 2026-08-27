@@ -125,6 +125,47 @@ To flush add tasks in specific queue, use
 Running the app requires proper certificates to be put into `nginx/monitoring_certs`,
 see [nginx/monitoring_certs/README.md](nginx/monitoring_certs/README.md) for more details.
 
+## Database roles
+
+PostgreSQL usage is monitored per **database role** (`pg_stat_statements` /
+`pg_stat_activity`, exported by `postgres-exporter` and shown on the *Database
+Monitoring* Grafana dashboard). Each consumer of the database therefore has its own
+role, so ingestion, dashboards and monitoring can be told apart:
+
+| role | used by | password |
+|---|---|---|
+| `postgres` (superuser) | app, celery, sync daemons | `POSTGRES_PASSWORD` |
+| `grafana_reader` (`GRAFANA_READER_USER`) | Grafana's PostgreSQL datasource — read-only, `statement_timeout`, `application_name=grafana` | `GRAFANA_READER_PASSWORD` |
+| `postgres_exporter` | postgres-exporter container — `pg_monitor` | `POSTGRES_EXPORTER_PASSWORD` |
+
+The database already exists on every environment, so the roles are created **by hand,
+once**, after setting the passwords in `.env` (the template's `db/init/` scripts only
+run on an empty data directory):
+
+```sh
+docker compose exec db psql -U postgres -d project -v ON_ERROR_STOP=1 <<'EOSQL'
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+CREATE ROLE postgres_exporter WITH LOGIN PASSWORD '<POSTGRES_EXPORTER_PASSWORD>';
+GRANT pg_monitor TO postgres_exporter;
+
+CREATE ROLE grafana_reader WITH LOGIN PASSWORD '<GRAFANA_READER_PASSWORD>';
+GRANT CONNECT ON DATABASE project TO grafana_reader;
+GRANT USAGE ON SCHEMA public TO grafana_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_reader;            -- includes views and materialized views
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_reader;  -- tables added by future migrations
+ALTER ROLE grafana_reader SET default_transaction_read_only = on;
+ALTER ROLE grafana_reader SET statement_timeout = '120s';                 -- matches GF_DATAPROXY_TIMEOUT
+ALTER ROLE grafana_reader SET application_name = 'grafana';
+EOSQL
+docker compose up -d --force-recreate grafana postgres-exporter
+```
+
+`ALTER DEFAULT PRIVILEGES` applies to tables created by the role running it
+(`postgres`, which is also what runs migrations). External Grafana instances reaching
+the database over mTLS (see below) should get a role created the same way rather than
+the superuser.
+
 # Remote PostgreSQL access (mTLS)
 
 Prod nginx exposes port `5432` with mutual TLS; postgres has no host port binding.

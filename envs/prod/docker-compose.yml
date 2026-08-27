@@ -104,8 +104,11 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_EXPORTER_PASSWORD=${POSTGRES_EXPORTER_PASSWORD}
     volumes:
       - ${POSTGRES_DATA_PATH:-./db/data}:/var/lib/postgresql/data
+      # first-boot SQL, run only when the data directory is initialised; see db/init/README.md
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     logging:
       <<: *logging
 
@@ -458,6 +461,7 @@ services:
       - app
       - cadvisor
       - node-exporter
+      - postgres-exporter
       - grafana
       - db
     command: nginx -g 'daemon off;'
@@ -501,6 +505,25 @@ services:
       - /sys:/sys:ro
       - ${DOCKER_ROOT_DIR:-/var/lib/docker}:/var/lib/docker:ro
     restart: unless-stopped
+    logging:
+      <<: *logging
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      # the bundled postgres container does not speak TLS; lib/pq defaults to sslmode=require
+      - DATA_SOURCE_URI=db:5432/${POSTGRES_DB}?sslmode=disable
+      # read-only monitoring role (pg_monitor) created by db/init/01-monitoring.sh
+      - DATA_SOURCE_USER=postgres_exporter
+      - DATA_SOURCE_PASS=${POSTGRES_EXPORTER_PASSWORD}
+    command:
+      # per-query calls / time / rows from pg_stat_statements
+      - '--collector.stat_statements'
+    depends_on:
+      db:
+        condition: service_healthy
     logging:
       <<: *logging
 
@@ -577,8 +600,9 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_DATAPROXY_TIMEOUT=120
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # read-only role; Grafana never holds the application/superuser password
+      - GRAFANA_READER_USER=${GRAFANA_READER_USER}
+      - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
