@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/edwardc-reef/cookiecutter-rt-django",
-  "commit": "f8f3f3c60523f64ead486409d9fa330b202468ed",
+  "commit": "da8f14eb45542171f7396394e562fdce72f5f2fd",
   "checkout": "postgres-monitoring",
   "context": {
     "cookiecutter": {
@@ -52,7 +52,7 @@
         "lstrip_blocks": true
       },
       "_template": "https://github.com/edwardc-reef/cookiecutter-rt-django",
-      "_commit": "f8f3f3c60523f64ead486409d9fa330b202468ed"
+      "_commit": "da8f14eb45542171f7396394e562fdce72f5f2fd"
     }
   },
   "directory": null
