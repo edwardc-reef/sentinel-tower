@@ -8,8 +8,9 @@ exist (e.g. after `cruft update` on a deployed project).
 ## Applying to an existing database
 
 `01-monitoring.sh` always creates the `pg_stat_statements` extension, but creates the
-dedicated exporter role only when `POSTGRES_EXPORTER_PASSWORD` is set at first
-initialisation; unset, the exporter falls back to connecting as `POSTGRES_USER`.
+dedicated exporter role only when both `POSTGRES_EXPORTER_USER` and
+`POSTGRES_EXPORTER_PASSWORD` are set at first initialisation; left blank, the
+exporter falls back to connecting as `POSTGRES_USER`.
 
 Run the statements from `01-monitoring.sh` by hand, using the role name and password
 from `POSTGRES_EXPORTER_USER` / `POSTGRES_EXPORTER_PASSWORD` in `.env`:
