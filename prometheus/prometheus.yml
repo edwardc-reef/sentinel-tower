@@ -25,9 +25,13 @@ scrape_configs:
   #     - targets: ['celery-flower:5555']
   #   scrape_interval: 60s
 
+  # node-exporter is reached through the host: prod runs it with network_mode: host
+  # (so it has no name on the compose network), dev publishes 127.0.0.1:9100. Prod
+  # prometheus maps host.docker.internal via extra_hosts; Docker Desktop resolves it
+  # natively.
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['host.docker.internal:9100']
     scrape_interval: 30s
 
   - job_name: 'cadvisor'
@@ -40,3 +44,8 @@ scrape_configs:
     static_configs:
       - targets: ['block-scheduler:8000']
     scrape_interval: 60s
+
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s

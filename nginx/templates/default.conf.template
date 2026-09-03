@@ -215,4 +215,13 @@ server {
     #     proxy_set_header X-Forwarded-Proto $scheme;
     #     proxy_pass http://celery-flower:5555/metrics;
     # }
+
+    location /postgres-metrics/ {
+        proxy_pass_header Server;
+        proxy_redirect off;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://postgres-exporter:9187/metrics;
+    }
 }

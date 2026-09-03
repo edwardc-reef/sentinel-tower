@@ -1,7 +1,7 @@
 {
-  "template": "https://github.com/reef-technologies/cookiecutter-rt-django",
-  "commit": "dc7a6562340edcf1f2b791ce6eae8dc9e488f3ef",
-  "checkout": null,
+  "template": "https://github.com/edwardc-reef/cookiecutter-rt-django",
+  "commit": "d641b2d582be2f479cb5197aea6f9f670212175c",
+  "checkout": "postgres-monitoring",
   "context": {
     "cookiecutter": {
       "repostory_name": "bittensor_sentinel",
@@ -51,8 +51,8 @@
         "trim_blocks": true,
         "lstrip_blocks": true
       },
-      "_template": "https://github.com/reef-technologies/cookiecutter-rt-django",
-      "_commit": "dc7a6562340edcf1f2b791ce6eae8dc9e488f3ef"
+      "_template": "https://github.com/edwardc-reef/cookiecutter-rt-django",
+      "_commit": "d641b2d582be2f479cb5197aea6f9f670212175c"
     }
   },
   "directory": null

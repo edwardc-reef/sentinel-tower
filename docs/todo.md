@@ -45,10 +45,17 @@ Issuing a client cert via `db_access_certs/issue-client.sh` only gates *transpor
 
 **Why separate from `issue-client.sh`:** that script runs on a workstation holding the offline CA key; it must not need network access to prod or DB admin credentials. Coupling cert issuance with live-DB role creation mixes two trust domains.
 
-## Add `postgres_exporter` for time-series DB observability
+## Upgrade PostgreSQL to 17+ so `pg_stat_statements` survives Django savepoints
 
-The DB size / index hygiene Grafana dashboard (see [docs/superpowers/specs/](superpowers/specs/) — design pending) is shipping with point-in-time SQL queries only. That answers "what's the state right now" but not "how is it growing." For retention planning we want week-over-week / month-over-month trends per table.
+`pg_stat_statements` (now exported to Prometheus by `postgres-exporter` and shown on the **PostgreSQL** dashboard) is flooded by Django savepoints. The sync daemons call `update_or_create` / `get_or_create` inside the outer `transaction.atomic()` in `apps/metagraph/services/metagraph_sync_service.py`; each of those opens its own savepoint, and Django names them uniquely (`SAVEPOINT "s<thread>_x<n>"`), so every one becomes a distinct `pg_stat_statements` entry. Measured locally: ~200 new entries/minute, 9,670 of 9,730 rows were `SAVEPOINT`/`RELEASE SAVEPOINT`, 58 were real queries, and real queries were being evicted within hours. This is the mechanism behind the 89k evictions/day in [postgres-tuning.md](postgres-tuning.md); raising `pg_stat_statements.max` only delays it.
 
-**Action:** add `prometheuscommunity/postgres-exporter` as a service in `docker-compose.yml`, point Prometheus at it, and extend the dashboard with trended panels (table size over time, row counts over time, growth rate per table). Most of the metrics we want — `pg_table_size_bytes{relname}`, `pg_index_size_bytes{relname}`, `pg_stat_user_tables_n_live_tup` — are exposed by the default config; the rest can be added via a `queries.yaml`.
+Verified against `postgres:{14,16,17,18}-alpine`: 14 and 16 keep one row per savepoint name; **17 and 18 normalise them to a single `savepoint $1` row** (PostgreSQL ≥ 17 ignores the savepoint name when computing the query id).
 
-**Why deferred:** the point-in-time dashboard already answers the immediate "which tables/indexes are biggest" question, and adding an exporter is a separate deploy-touching change (new container, new scrape target, secrets). Bundling them would slow the dashboard ship.
+**Interim workaround (PostgreSQL 14):** `pg_stat_statements.track_utility=off` on the `db` command. Savepoints stop being recorded and real queries stay in the table permanently; `pg_stat_statements.max` can come back down from 50000 (the exporter reads the whole table every scrape, so a smaller table is cheaper). Cost: `REFRESH MATERIALIZED VIEW` and `VACUUM` no longer appear in `pg_stat_statements` — they still appear in the prod slow-query log (`log_min_duration_statement=2000`, `auto_explain`).
+
+**Action:**
+
+1. Plan a major-version upgrade 14 → 17 (`pg_upgrade` or dump/restore of the multi-GB data directory; note that the `postgres` image changes its default `PGDATA` path from 18 on). When done, remove `track_utility=off`.
+2. Until then, expose the APY materialized-view refresh duration directly from `apps/metagraph/tasks.py` (elapsed time on the existing "Refreshed …" log line and a `django-business-metrics` gauge/histogram scraped via `/business-metrics`) so the refresh — historically the DB's most fragile operation — has a first-class metric independent of `pg_stat_statements`.
+
+Alternative that avoids both: rewrite the per-neuron writes as bulk upserts (`bulk_create(update_conflicts=True)`) so no savepoints are emitted. Larger change with different error semantics; not preferred.
