@@ -97,6 +97,20 @@ services:
     ports:
       - 127.0.0.1:9187:9187
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /:/host:ro
+    command:
+      - '--path.rootfs=/host'
+      # unlike prod, keep /var visible: Docker Desktop's VM mounts its data disk there
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run|boot)($$|/)'
+    # prometheus scrapes host.docker.internal:9100 (same target as prod, where
+    # node-exporter runs with network_mode: host), so publish the port on the host
+    ports:
+      - 127.0.0.1:9100:9100
+
   prometheus:
     image: prom/prometheus:v2.47.0
     command:

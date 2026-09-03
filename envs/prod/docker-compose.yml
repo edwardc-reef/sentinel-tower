@@ -574,6 +574,10 @@ services:
   prometheus:
     image: prom/prometheus:v2.47.0
     restart: unless-stopped
+    # resolves host.docker.internal so the node-exporter scrape (which goes through
+    # the host, see prometheus.yml) works on plain Linux Docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus

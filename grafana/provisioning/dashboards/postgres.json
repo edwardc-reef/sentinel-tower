@@ -156,7 +156,7 @@
       "gridPos": {
         "x": 3,
         "y": 1,
-        "w": 4,
+        "w": 3,
         "h": 4
       },
       "targets": [
@@ -225,9 +225,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 7,
+        "x": 6,
         "y": 1,
-        "w": 4,
+        "w": 3,
         "h": 4
       },
       "targets": [
@@ -296,9 +296,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 11,
+        "x": 9,
         "y": 1,
-        "w": 4,
+        "w": 3,
         "h": 4
       },
       "targets": [
@@ -367,9 +367,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 15,
+        "x": 12,
         "y": 1,
-        "w": 4,
+        "w": 3,
         "h": 4
       },
       "targets": [
@@ -438,9 +438,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 19,
+        "x": 15,
         "y": 1,
-        "w": 5,
+        "w": 3,
         "h": 4
       },
       "targets": [
@@ -492,12 +492,546 @@
       }
     },
     {
+      "id": 31,
+      "type": "stat",
+      "title": "WAL size",
+      "description": "Current size of the write-ahead log (cluster-wide). Grows between checkpoints; sustained growth beyond max_wal_size means checkpoints or archiving are not keeping up.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "pg_wal_size_bytes",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Disk space remaining",
+      "description": "Free space on the smallest real filesystem (ext4/xfs/btrfs) of the host the database runs on, via node-exporter. When this runs out, postgres stops accepting writes \u2014 plan capacity against the Database size and Table bloat tiles.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "min(node_filesystem_avail_bytes{fstype=~\"ext4|xfs|btrfs\"})",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10737418240
+              },
+              {
+                "color": "green",
+                "value": 26843545600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Table bloat",
+      "description": "Estimated dead space across all user tables \u2014 space held by updated/deleted rows that vacuum has not reclaimed yet, computed from planner statistics (needs a recent ANALYZE). Steady growth means autovacuum is not keeping up.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(SUM(wastedbytes), 0)::bigint AS value FROM (SELECT\n  schemaname, tablename,\n  MAX(tbloat) AS tbloat,\n  MAX(wastedbytes) AS wastedbytes,\n  SUM(wastedibytes) AS wastedibytes,\n  MAX(wastedbytes) + SUM(wastedibytes) AS total_wasted\nFROM (\nSELECT\n  schemaname, tablename,\n  ROUND((CASE WHEN otta=0 THEN 0.0 ELSE sml.relpages::float/otta END)::numeric,1) AS tbloat,\n  CASE WHEN relpages < otta THEN 0 ELSE bs*(sml.relpages-otta)::bigint END AS wastedbytes,\n  CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS wastedibytes\nFROM (\n  SELECT\n    schemaname, tablename, cc.reltuples, cc.relpages, bs,\n    CEIL((cc.reltuples*((datahdr+ma-\n      (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)) AS otta,\n    COALESCE(c2.relname,'?') AS iname, COALESCE(c2.reltuples,0) AS ituples, COALESCE(c2.relpages,0) AS ipages,\n    COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta\n  FROM (\n    SELECT\n      ma,bs,schemaname,tablename,\n      (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,\n      (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2\n    FROM (\n      SELECT\n        schemaname, tablename, hdr, ma, bs,\n        SUM((1-null_frac)*avg_width) AS datawidth,\n        MAX(null_frac) AS maxfracsum,\n        hdr+(\n          SELECT 1+count(*)/8\n          FROM pg_stats s2\n          WHERE null_frac<>0 AND s2.schemaname = s.schemaname AND s2.tablename = s.tablename\n        ) AS nullhdr\n      FROM pg_stats s, (\n        SELECT\n          (SELECT current_setting('block_size')::numeric) AS bs,\n          CASE WHEN substring(v,12,3) IN ('8.0','8.1','8.2') THEN 27 ELSE 23 END AS hdr,\n          CASE WHEN v ~ 'mingw32' THEN 8 ELSE 4 END AS ma\n        FROM (SELECT version() AS v) AS foo\n      ) AS constants\n      GROUP BY 1,2,3,4,5\n    ) AS foo\n  ) AS rs\n  JOIN pg_class cc ON cc.relname = rs.tablename\n  JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = rs.schemaname AND nn.nspname <> 'information_schema'\n  LEFT JOIN pg_index i ON indrelid = cc.oid\n  LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid\n) AS sml\n) AS per_index\nWHERE schemaname NOT IN ('pg_catalog', 'information_schema')\nGROUP BY schemaname, tablename\n) t"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Index bloat",
+      "description": "Estimated dead space across all indexes on user tables.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 3,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COALESCE(SUM(wastedibytes), 0)::bigint AS value FROM (SELECT\n  schemaname, tablename,\n  MAX(tbloat) AS tbloat,\n  MAX(wastedbytes) AS wastedbytes,\n  SUM(wastedibytes) AS wastedibytes,\n  MAX(wastedbytes) + SUM(wastedibytes) AS total_wasted\nFROM (\nSELECT\n  schemaname, tablename,\n  ROUND((CASE WHEN otta=0 THEN 0.0 ELSE sml.relpages::float/otta END)::numeric,1) AS tbloat,\n  CASE WHEN relpages < otta THEN 0 ELSE bs*(sml.relpages-otta)::bigint END AS wastedbytes,\n  CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS wastedibytes\nFROM (\n  SELECT\n    schemaname, tablename, cc.reltuples, cc.relpages, bs,\n    CEIL((cc.reltuples*((datahdr+ma-\n      (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)) AS otta,\n    COALESCE(c2.relname,'?') AS iname, COALESCE(c2.reltuples,0) AS ituples, COALESCE(c2.relpages,0) AS ipages,\n    COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta\n  FROM (\n    SELECT\n      ma,bs,schemaname,tablename,\n      (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,\n      (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2\n    FROM (\n      SELECT\n        schemaname, tablename, hdr, ma, bs,\n        SUM((1-null_frac)*avg_width) AS datawidth,\n        MAX(null_frac) AS maxfracsum,\n        hdr+(\n          SELECT 1+count(*)/8\n          FROM pg_stats s2\n          WHERE null_frac<>0 AND s2.schemaname = s.schemaname AND s2.tablename = s.tablename\n        ) AS nullhdr\n      FROM pg_stats s, (\n        SELECT\n          (SELECT current_setting('block_size')::numeric) AS bs,\n          CASE WHEN substring(v,12,3) IN ('8.0','8.1','8.2') THEN 27 ELSE 23 END AS hdr,\n          CASE WHEN v ~ 'mingw32' THEN 8 ELSE 4 END AS ma\n        FROM (SELECT version() AS v) AS foo\n      ) AS constants\n      GROUP BY 1,2,3,4,5\n    ) AS foo\n  ) AS rs\n  JOIN pg_class cc ON cc.relname = rs.tablename\n  JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname = rs.schemaname AND nn.nspname <> 'information_schema'\n  LEFT JOIN pg_index i ON indrelid = cc.oid\n  LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid\n) AS sml\n) AS per_index\nWHERE schemaname NOT IN ('pg_catalog', 'information_schema')\nGROUP BY schemaname, tablename\n) t"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Since last autovacuum",
+      "description": "Time since the autovacuum daemon last vacuumed any user table \u2014 reclaiming the dead space shown in the bloat numbers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 6,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "time() - max(pg_stat_user_tables_last_autovacuum{datname=\"$datname\"} > 0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Since last autoanalyze",
+      "description": "Time since autovacuum last analyzed any user table. The bloat figures are estimated from these statistics, so a stale value here means stale bloat numbers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 9,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "time() - max(pg_stat_user_tables_last_autoanalyze{datname=\"$datname\"} > 0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Deadlocks (24h)",
+      "description": "Deadlocks detected in the last 24 hours, regardless of the selected time range. Any value above zero means transactions are locking the same rows in conflicting order \u2014 check the postgres log for the queries involved.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(increase(pg_stat_database_deadlocks{datname=\"$datname\"}[24h]))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Forced checkpoints (24h)",
+      "description": "Checkpoints forced in the last 24 hours because WAL filled up before the scheduled checkpoint (cluster-wide, fixed window). Frequent forced checkpoints cause write stalls and mean max_wal_size is too small for the write volume; occasional ones (e.g. during a backup or manual CHECKPOINT) are harmless.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(increase(pg_stat_bgwriter_checkpoints_req_total[24h]))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Host CPU usage",
+      "description": "CPU usage of the host the database runs on (all cores averaged), via node-exporter. Sustained high values slow every query; check whether it is postgres or the app by comparing with 'Where the time goes'.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 8,
       "type": "row",
       "title": "1. What queries were made",
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 9,
         "w": 24,
         "h": 1
       },
@@ -507,15 +1041,15 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Top 10 queries by time consumed \u2014 selected time range",
-      "description": "Total execution time, calls, mean time per call and rows for each query over the dashboard's time range (Prometheus counters, increase over the range). Query text is joined in from pg_stat_statements via the PostgreSQL datasource; a query evicted from pg_stat_statements drops out of the table.",
+      "title": "Top queries \u2014 by total time and per execution \u2014 selected time range",
+      "description": "Union of the 10 queries that consumed the most total time and the 10 slowest per execution (at least 5 calls) in the selected range. Sorted by total time \u2014 click the 'mean time' header to re-rank by per-execution latency; both top-10 sets are always included, so either sort order is complete.",
       "datasource": {
         "type": "datasource",
         "uid": "-- Mixed --"
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
+        "y": 10,
         "w": 24,
         "h": 11
       },
@@ -526,7 +1060,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])))",
+          "expr": "sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])) and (topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range]))) or topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])) / (sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range])) >= 5)))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -539,7 +1073,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range]))",
+          "expr": "sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range])) and (topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range]))) or topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])) / (sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range])) >= 5)))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -552,7 +1086,7 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "sum by (queryid, user) (increase(pg_stat_statements_rows_total{datname=\"$datname\"}[$__range]))",
+          "expr": "sum by (queryid, user) (increase(pg_stat_statements_rows_total{datname=\"$datname\"}[$__range])) and (topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range]))) or topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])) / (sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range])) >= 5)))",
           "legendFormat": "",
           "range": false,
           "instant": true,
@@ -772,8 +1306,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 17,
-        "w": 12,
+        "y": 21,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -832,121 +1366,12 @@
       }
     },
     {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Rows per second",
-      "description": "Ingestion throughput as the database sees it. Inserted dropping to 0 while the sync daemons run means ingestion is stuck.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 17,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "rate(pg_stat_database_tup_inserted{datname=\"$datname\"}[5m])",
-          "legendFormat": "inserted",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "rate(pg_stat_database_tup_updated{datname=\"$datname\"}[5m])",
-          "legendFormat": "updated",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "C",
-          "expr": "rate(pg_stat_database_tup_deleted{datname=\"$datname\"}[5m])",
-          "legendFormat": "deleted",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "D",
-          "expr": "rate(pg_stat_database_tup_fetched{datname=\"$datname\"}[5m])",
-          "legendFormat": "fetched",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "decimals": 0,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 12,
       "type": "row",
       "title": "2. How long they took",
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 29,
         "w": 24,
         "h": 1
       },
@@ -964,8 +1389,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 26,
-        "w": 12,
+        "y": 30,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -1024,161 +1449,6 @@
       }
     },
     {
-      "id": 14,
-      "type": "table",
-      "title": "Slowest queries per execution \u2014 selected time range",
-      "description": "Mean execution time per call over the dashboard's time range. Complements the 'time consumed' ranking: a query can be slow without being a big share of total load. Query text is joined in from pg_stat_statements via the PostgreSQL datasource.",
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Mixed --"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 26,
-        "w": 12,
-        "h": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "topk(10, sum by (queryid, user) (increase(pg_stat_statements_seconds_total{datname=\"$datname\"}[$__range])) / (sum by (queryid, user) (increase(pg_stat_statements_calls_total{datname=\"$datname\"}[$__range])) >= 5))",
-          "legendFormat": "",
-          "range": false,
-          "instant": true,
-          "format": "table",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "refId": "B",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT s.queryid::text AS queryid,\n       min(left(regexp_replace(s.query, '\\s+', ' ', 'g'), 200)) AS query\nFROM pg_stat_statements s\nJOIN pg_database d ON d.oid = s.dbid\nWHERE d.datname = '${datname}'\nGROUP BY s.queryid\nORDER BY max(s.total_exec_time) DESC\nLIMIT 1000",
-          "editorMode": "code"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "joinByField",
-          "options": {
-            "byField": "queryid",
-            "mode": "inner"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true
-            },
-            "renameByName": {
-              "Value #A": "mean time",
-              "Value": "mean time"
-            },
-            "indexByName": {
-              "query": 0,
-              "user": 1,
-              "mean time": 2,
-              "queryid": 3
-            }
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "sort": [
-              {
-                "field": "mean time",
-                "desc": true
-              }
-            ]
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "mean time"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 3
-              },
-              {
-                "id": "custom.width",
-                "value": 220
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "gauge",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "continuous-BlYlRd"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "user"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "queryid"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 170
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "id": 15,
       "type": "timeseries",
       "title": "Where the time goes",
@@ -1189,8 +1459,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
-        "w": 12,
+        "y": 39,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -1275,190 +1545,17 @@
       }
     },
     {
-      "id": 16,
-      "type": "timeseries",
-      "title": "Longest running transaction",
-      "description": "Includes idle-in-transaction sessions. Sustained values above the line block autovacuum and hold locks.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 35,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "max(pg_stat_activity_max_tx_duration{datname=\"$datname\"})",
-          "legendFormat": "oldest open transaction",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "decimals": 0,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "red",
-                "value": 300
-              }
-            ]
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 17,
       "type": "row",
       "title": "3. Resource usage",
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 47,
         "w": 24,
         "h": 1
       },
       "collapsed": false,
       "panels": []
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Cache hit ratio",
-      "description": "Share of block reads served from shared_buffers.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 44,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "sum(rate(pg_stat_database_blks_hit{datname=\"$datname\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{datname=\"$datname\"}[5m])) + sum(rate(pg_stat_database_blks_read{datname=\"$datname\"}[5m])))",
-          "legendFormat": "hit ratio",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "decimals": 2,
-          "min": 0,
-          "max": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 0.95
-              }
-            ]
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          }
-        },
-        "overrides": []
-      }
     },
     {
       "id": 19,
@@ -1470,8 +1567,8 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 12,
-        "y": 44,
+        "x": 0,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -1575,89 +1672,6 @@
       }
     },
     {
-      "id": 20,
-      "type": "timeseries",
-      "title": "Database and WAL size",
-      "description": "Trend of on-disk size. Sentinel's DB Size & Retention dashboard breaks this down per table.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 52,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "pg_database_size_bytes{datname=\"$datname\"}",
-          "legendFormat": "database",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "pg_wal_size_bytes",
-          "legendFormat": "WAL",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "decimals": 1,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 21,
       "type": "timeseries",
       "title": "Temp file writes",
@@ -1667,9 +1681,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 8,
-        "y": 52,
-        "w": 8,
+        "x": 12,
+        "y": 48,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -1709,90 +1723,6 @@
             "mode": "palette-classic"
           },
           "decimals": 1,
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 22,
-      "type": "timeseries",
-      "title": "Forced checkpoints and deadlocks (per minute)",
-      "description": "Forced (requested) checkpoints mean max_wal_size is too small for the write rate. Deadlocks should be 0.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 52,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "rate(pg_stat_bgwriter_checkpoints_req_total[5m]) * 60",
-          "legendFormat": "forced checkpoints",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "B",
-          "expr": "rate(pg_stat_database_deadlocks{datname=\"$datname\"}[5m]) * 60",
-          "legendFormat": "deadlocks",
-          "range": true,
-          "instant": false,
-          "format": "time_series",
-          "editorMode": "code"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "decimals": 2,
-          "min": 0,
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
