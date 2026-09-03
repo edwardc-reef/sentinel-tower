@@ -136,7 +136,7 @@ role, so ingestion, dashboards and monitoring can be told apart:
 |---|---|---|
 | `postgres` (superuser) | app, celery, sync daemons | `POSTGRES_PASSWORD` |
 | `grafana_reader` (`GRAFANA_READER_USER`) | Grafana's PostgreSQL datasource — read-only, `statement_timeout`, `application_name=grafana` | `GRAFANA_READER_PASSWORD` |
-| `postgres_exporter` | postgres-exporter container — `pg_monitor` | `POSTGRES_EXPORTER_PASSWORD` |
+| `postgres_exporter` (`POSTGRES_EXPORTER_USER`) | postgres-exporter container — `pg_monitor` | `POSTGRES_EXPORTER_PASSWORD` |
 
 The database already exists on every environment, so the roles are created **by hand,
 once**, after setting the passwords in `.env` (the template's `db/init/` scripts only
@@ -146,14 +146,15 @@ run on an empty data directory):
 docker compose exec db psql -U postgres -d project -v ON_ERROR_STOP=1 <<'EOSQL'
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
-CREATE ROLE postgres_exporter WITH LOGIN PASSWORD '<POSTGRES_EXPORTER_PASSWORD>';
-GRANT pg_monitor TO postgres_exporter;
+CREATE ROLE <POSTGRES_EXPORTER_USER> WITH LOGIN PASSWORD '<POSTGRES_EXPORTER_PASSWORD>';
+GRANT pg_monitor TO <POSTGRES_EXPORTER_USER>;
 
 CREATE ROLE grafana_reader WITH LOGIN PASSWORD '<GRAFANA_READER_PASSWORD>';
 GRANT CONNECT ON DATABASE project TO grafana_reader;
 GRANT USAGE ON SCHEMA public TO grafana_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_reader;            -- includes views and materialized views
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_reader;  -- tables added by future migrations
+GRANT pg_read_all_stats TO grafana_reader;                                -- query text of other roles in pg_stat_statements (PostgreSQL dashboard)
 ALTER ROLE grafana_reader SET default_transaction_read_only = on;
 ALTER ROLE grafana_reader SET statement_timeout = '120s';                 -- matches GF_DATAPROXY_TIMEOUT
 ALTER ROLE grafana_reader SET application_name = 'grafana';
