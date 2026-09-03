@@ -87,8 +87,8 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.20.1
     environment:
       - DATA_SOURCE_URI=db:5432/${POSTGRES_DB}?sslmode=disable
-      - DATA_SOURCE_USER=${POSTGRES_EXPORTER_USER:-postgres_exporter}
-      - DATA_SOURCE_PASS=${POSTGRES_EXPORTER_PASSWORD}
+      - DATA_SOURCE_USER=${POSTGRES_EXPORTER_USER:-${POSTGRES_USER}}
+      - DATA_SOURCE_PASS=${POSTGRES_EXPORTER_PASSWORD:-${POSTGRES_PASSWORD}}
     command:
       - '--collector.stat_statements'
     depends_on:
@@ -122,9 +122,11 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_NAME=Sentinel Tower
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - POSTGRES_DB=${POSTGRES_DB}
-      # read-only role; Grafana never holds the application/superuser password
-      - GRAFANA_READER_USER=${GRAFANA_READER_USER:-grafana_reader}
-      - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD}
+      # Dedicated read-only role when GRAFANA_READER_USER/PASSWORD are set (create it
+      # per docs/README.md "Database roles"); falls back to the application user so
+      # dashboards work without any role setup.
+      - GRAFANA_READER_USER=${GRAFANA_READER_USER:-${POSTGRES_USER}}
+      - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD:-${POSTGRES_PASSWORD}}
       - BLOCK_END=${BLOCK_END:-5000000}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

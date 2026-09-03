@@ -58,7 +58,7 @@ cd ~/repos/sentinel_tower.git
 cat <<'EOT' > hooks/post-receive
 #!/bin/bash
 unset GIT_INDEX_FILE
-export ROOT=/root
+export ROOT=/home/ubuntu
 export REPO=sentinel_tower
 while read oldrev newrev ref
 do
@@ -138,9 +138,13 @@ role, so ingestion, dashboards and monitoring can be told apart:
 | `grafana_reader` (`GRAFANA_READER_USER`) | Grafana's PostgreSQL datasource — read-only, `statement_timeout`, `application_name=grafana` | `GRAFANA_READER_PASSWORD` |
 | `postgres_exporter` (`POSTGRES_EXPORTER_USER`) | postgres-exporter container — `pg_monitor` | `POSTGRES_EXPORTER_PASSWORD` |
 
-The database already exists on every environment, so the roles are created **by hand,
-once**, after setting the passwords in `.env` (the template's `db/init/` scripts only
-run on an empty data directory):
+Both dedicated roles are **opt-in**: with `POSTGRES_EXPORTER_*` / `GRAFANA_READER_*`
+unset in `.env`, the exporter and Grafana fall back to `POSTGRES_USER`, so everything
+works without role setup (at the cost of all load showing as one user on the
+PostgreSQL dashboard). To opt in on a database that already exists, create the roles
+**by hand, once**, then set the variables in `.env` and `docker compose up -d`
+(recreates the exporter and Grafana containers with the new credentials; nothing else
+is touched — the application itself always uses `POSTGRES_USER`):
 
 ```sh
 docker compose exec db psql -U postgres -d project -v ON_ERROR_STOP=1 <<'EOSQL'
