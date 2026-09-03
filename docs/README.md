@@ -58,7 +58,7 @@ cd ~/repos/sentinel_tower.git
 cat <<'EOT' > hooks/post-receive
 #!/bin/bash
 unset GIT_INDEX_FILE
-export ROOT=/home/ubuntu
+export ROOT=/root
 export REPO=sentinel_tower
 while read oldrev newrev ref
 do
@@ -127,10 +127,9 @@ see [nginx/monitoring_certs/README.md](nginx/monitoring_certs/README.md) for mor
 
 ## Database roles
 
-PostgreSQL usage is monitored per **database role** (`pg_stat_statements` /
-`pg_stat_activity`, exported by `postgres-exporter` and shown on the *Database
-Monitoring* Grafana dashboard). Each consumer of the database therefore has its own
-role, so ingestion, dashboards and monitoring can be told apart:
+`pg_stat_statements` / `pg_stat_activity` attribute queries to the **database role**
+that ran them, and the *PostgreSQL* Grafana dashboard groups by that role — so each
+consumer gets its own:
 
 | role | used by | password |
 |---|---|---|
@@ -138,13 +137,11 @@ role, so ingestion, dashboards and monitoring can be told apart:
 | `grafana_reader` (`GRAFANA_READER_USER`) | Grafana's PostgreSQL datasource — read-only, `statement_timeout`, `application_name=grafana` | `GRAFANA_READER_PASSWORD` |
 | `postgres_exporter` (`POSTGRES_EXPORTER_USER`) | postgres-exporter container — `pg_monitor` | `POSTGRES_EXPORTER_PASSWORD` |
 
-Both dedicated roles are **opt-in**: with `POSTGRES_EXPORTER_*` / `GRAFANA_READER_*`
-unset in `.env`, the exporter and Grafana fall back to `POSTGRES_USER`, so everything
-works without role setup (at the cost of all load showing as one user on the
-PostgreSQL dashboard). To opt in on a database that already exists, create the roles
-**by hand, once**, then set the variables in `.env` and `docker compose up -d`
-(recreates the exporter and Grafana containers with the new credentials; nothing else
-is touched — the application itself always uses `POSTGRES_USER`):
+Both dedicated roles are **opt-in**: left blank in `.env`, the exporter and Grafana
+fall back to `POSTGRES_USER` and everything works, with all load shown as one user.
+To opt in on an existing database, create the roles by hand once, fill the variables
+in `.env` (each pair: both or neither), and recreate the two containers — the app
+itself always uses `POSTGRES_USER`:
 
 ```sh
 docker compose exec db psql -U postgres -d project -v ON_ERROR_STOP=1 <<'EOSQL'
@@ -166,10 +163,9 @@ EOSQL
 docker compose up -d --force-recreate grafana postgres-exporter
 ```
 
-`ALTER DEFAULT PRIVILEGES` applies to tables created by the role running it
-(`postgres`, which is also what runs migrations). External Grafana instances reaching
-the database over mTLS (see below) should get a role created the same way rather than
-the superuser.
+`ALTER DEFAULT PRIVILEGES` covers tables created by `postgres` (which runs
+migrations). External Grafana instances reaching the database over mTLS (see below)
+should get a role like `grafana_reader`, not the superuser.
 
 # Remote PostgreSQL access (mTLS)
 
