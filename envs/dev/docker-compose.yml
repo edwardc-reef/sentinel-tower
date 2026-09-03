@@ -95,7 +95,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - 127.0.0.1:${POSTGRES_EXPORTER_PORT:-9187}:9187
+      - 127.0.0.1:9187:9187
 
   prometheus:
     image: prom/prometheus:v2.47.0
