@@ -2,6 +2,7 @@
 # Executed by the postgres image on first initialisation of the data directory only.
 # For an existing database, run the same statements by hand — see db/init/README.md.
 set -euo pipefail
+
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
 
