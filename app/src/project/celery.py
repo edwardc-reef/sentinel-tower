@@ -11,7 +11,9 @@ from django.dispatch import receiver
 from django_structlog.celery.signals import bind_extra_task_metadata
 from django_structlog.celery.steps import DjangoStructLogInitStep
 from more_itertools import chunked
-from prometheus_client import Gauge, multiprocess
+from prometheus_client import Metric, multiprocess
+from prometheus_client.metrics_core import GaugeMetricFamily
+from prometheus_client.registry import Collector
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "project.settings")
 
@@ -19,12 +21,6 @@ app = Celery("project")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.steps["worker"].add(DjangoStructLogInitStep)  # type: ignore
 app.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
-
-num_tasks_in_queue = Gauge(
-    "celery_queue_len",
-    "How many tasks are there in a queue",
-    labelnames=("queue",),
-)
 
 
 @setup_logging.connect
@@ -55,6 +51,18 @@ def get_tasks_in_queue(queue_name: str) -> list[bytes]:
 def get_num_tasks_in_queue(queue_name: str) -> int:
     with app.pool.acquire(block=True) as conn:
         return conn.default_channel.client.llen(queue_name)
+
+
+class CeleryQueueLenCollector(Collector):
+    def collect(self) -> list[Metric]:
+        metric = GaugeMetricFamily(
+            "celery_queue_len",
+            "How many tasks are there in a queue",
+            labels=["queue"],
+        )
+        for queue in settings.CELERY_TASK_QUEUES:
+            metric.add_metric([queue.name], get_num_tasks_in_queue(queue.name))
+        return [metric]
 
 
 def move_tasks(source_queue: str, destination_queue: str, chunk_size: int = 100) -> None:

@@ -25,6 +25,8 @@ NETUID = 1
 # (block + netuid + 2) % 361 == 0, plus two intermediate points and the epoch end.
 DUMPABLE_BLOCK = 358
 NEXT_DUMPABLE_BLOCK = 478
+# Root-subnet epoch start: (block + 0 + 2) % 361 == 0.
+META_EPOCH_START = 359
 
 HANDSHAKE_TIMEOUT = TimeoutError("timed out during handshake")
 
@@ -182,3 +184,36 @@ def test_successful_head_rpc_resets_outage_before_catch_up_failure(monkeypatch):
     ]
     recoveries = [entry for entry in logs if entry["event"] == "Provider connection recovered"]
     assert [entry["failed_attempts"] for entry in recoveries] == [1, 1]
+
+
+@override_settings(**RETRY_SETTINGS)
+def test_unreadable_subnet_emissions_do_not_stop_the_metagraph_dumps(monkeypatch):
+    """A failed emission sample is logged and skipped; the block's dumps still run.
+
+    The fake provider has no emission map configured, so the read at the meta-epoch
+    start block comes back unreadable the way an unreachable chain would.
+    """
+    command = sync_metagraph.Command()
+
+    def request_shutdown() -> None:
+        command._shutdown = True
+
+    # META_EPOCH_START is a root-subnet epoch start ((block + 2) % 361 == 0) and
+    # sits between the two dumpable blocks for netuid 1, so one daemon pass hits
+    # the emission sample and a metagraph dump.
+    provider = ScriptedProvider(
+        [META_EPOCH_START, NEXT_DUMPABLE_BLOCK, NEXT_DUMPABLE_BLOCK],
+        on_heads_exhausted=request_shutdown,
+    )
+    factory = ProviderFactory(provider)
+    monkeypatch.setattr(sync_metagraph, "bittensor_provider", factory)
+
+    with capture_logs() as logs:
+        call_command(command, provider="bittensor", stdout=StringIO())
+
+    assert factory.call_count == 1, "the daemon must not treat this as a connection failure"
+    assert provider.metagraph_requests == [(NETUID, NEXT_DUMPABLE_BLOCK)]
+    skipped = [entry for entry in logs if entry["event"] == "Skipping subnet emissions, chain state unavailable"]
+    assert [entry["block"] for entry in skipped] == [META_EPOCH_START]
+    synced = [entry for entry in logs if entry["event"] == "Subnet emissions synced"]
+    assert [entry["subnets"] for entry in synced] == [0]

@@ -1,0 +1,2332 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Point-in-time query performance: live activity, pg_stat_statements top-N, database health and index coverage. Companion to DB Size & Retention. How to read it: docs/postgres-query-performance.md.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [
+        "database"
+      ],
+      "targetBlank": false,
+      "title": "Database dashboards",
+      "tooltip": "DB Size & Retention and this dashboard",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "panels": [],
+      "title": "Right now",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Live client-backend counts from pg_stat_activity (autovacuum, parallel and WAL workers excluded). idle_in_txn holds locks and blocks vacuum; waiting_on_lock is contention right now; client_backends_pct is client backends over max_connections.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "idle_in_txn"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "waiting_on_lock"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "client_backends_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "red",
+                      "value": 90
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE state = 'active') AS active, count(*) FILTER (WHERE state = 'idle') AS idle, count(*) FILTER (WHERE state LIKE 'idle in transaction%') AS idle_in_txn, count(*) FILTER (WHERE wait_event_type = 'Lock') AS waiting_on_lock, round(100.0 * count(*) / current_setting('max_connections')::int, 1) AS client_backends_pct, current_setting('max_connections')::int AS max_connections FROM pg_stat_activity WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Backends",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Client backends whose current statement started more than 2 s ago, oldest first. Includes 'idle in transaction' sessions on purpose: for those, age_s is time since their last statement, and a long idle transaction blocks vacuum. Text cut at 120 characters. Empty is the normal state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pid"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "app"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "client"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "wait"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "age_s"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT pid, usename AS role, COALESCE(NULLIF(application_name, ''), '-') AS app, COALESCE(host(client_addr), 'local') AS client, state, COALESCE(wait_event_type || ':' || wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS age_s, left(regexp_replace(query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity WHERE backend_type = 'client backend' AND state <> 'idle' AND pid <> pg_backend_pid() AND now() - query_start > interval '2 seconds' ORDER BY query_start",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Statements running longer than 2 s",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Sessions waiting on a lock held by another session (pg_blocking_pids). blocked_by lists the holder pids; find them in the panel above. Empty is the normal state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pid"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "blocked_by"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "wait"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "age_s"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT a.pid, array_to_string(pg_blocking_pids(a.pid), ',') AS blocked_by, a.usename AS role, COALESCE(a.wait_event_type || ':' || a.wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - a.query_start))::numeric, 1) AS age_s, left(regexp_replace(a.query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity a WHERE cardinality(pg_blocking_pids(a.pid)) > 0 ORDER BY a.query_start",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Blocked sessions",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 200,
+      "panels": [],
+      "title": "Statement statistics (cumulative since reset)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Where the database spends its time. s_per_day normalises by days since reset. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_written"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_per_call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT count(*) AS variants, sum(calls) AS calls, round(sum(total_exec_time)::numeric / 1000, 1) AS total_s, round((sum(total_exec_time) / 1000 / (SELECT days FROM info))::numeric, 1) AS s_per_day, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, round(max(max_exec_time)::numeric, 1) AS max_ms, round(max(stddev_exec_time)::numeric, 1) AS stddev_ms, round(sum(rows)::numeric / NULLIF(sum(calls), 0), 1) AS rows_per_call, round(100.0 * sum(shared_blks_hit) / NULLIF(sum(shared_blks_hit) + sum(shared_blks_read), 0), 1) AS hit_pct, round(sum(blk_read_time)::numeric / 1000, 1) AS io_read_s, (sum(temp_blks_written) * current_setting('block_size')::bigint)::bigint AS temp_written, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family ORDER BY sum(total_exec_time) DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Top 20 by total time",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Slowest statements per call, ignoring one-offs. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_written"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_per_call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT sum(calls) AS calls, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, round(max(max_exec_time)::numeric, 1) AS max_ms, round(max(stddev_exec_time)::numeric, 1) AS stddev_ms, round(100.0 * sum(shared_blks_hit) / NULLIF(sum(shared_blks_hit) + sum(shared_blks_read), 0), 1) AS hit_pct, round(sum(blk_read_time)::numeric / 1000, 1) AS io_read_s, round(sum(total_exec_time)::numeric / 1000, 1) AS total_s, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family HAVING sum(calls) >= 5 ORDER BY sum(total_exec_time) / NULLIF(sum(calls), 0) DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Top 20 by mean time (calls >= 5)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Time spent waiting for blocks from disk (needs track_io_timing=on; empty on dev). High stddev_ms plus high io_share_pct is the cold-cache signature: the plan is fine, the pages are not in memory. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_written"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_per_call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT sum(calls) AS calls, round(sum(blk_read_time)::numeric / 1000, 1) AS io_read_s, round((100.0 * sum(blk_read_time) / NULLIF(sum(total_exec_time), 0))::numeric, 1) AS io_share_pct, round(100.0 * sum(shared_blks_hit) / NULLIF(sum(shared_blks_hit) + sum(shared_blks_read), 0), 1) AS hit_pct, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, round(max(stddev_exec_time)::numeric, 1) AS stddev_ms, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family HAVING sum(blk_read_time) > 0 ORDER BY sum(blk_read_time) DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Top 20 by I/O read time",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Statements that spilled sorts or hashes to disk: work_mem was too small for them. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_written"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_per_call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT sum(calls) AS calls, (sum(temp_blks_written) * current_setting('block_size')::bigint)::bigint AS temp_written, (sum(temp_blks_read) * current_setting('block_size')::bigint)::bigint AS temp_read, (sum(temp_blks_written) * current_setting('block_size')::bigint / NULLIF(sum(calls), 0))::bigint AS temp_per_call, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family HAVING sum(temp_blks_written) > 0 ORDER BY sum(temp_blks_written) DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Top 20 by temp written",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Chattiest statements. rows_per_call of 0 on a SELECT means a lookup that finds nothing, usually a get_or_create / update_or_create probe that could be a bulk operation. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "role"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_written"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_per_call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT sum(calls) AS calls, round(sum(calls) / (SELECT days FROM info)) AS calls_per_day, round(sum(rows)::numeric / NULLIF(sum(calls), 0), 1) AS rows_per_call, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, round(sum(total_exec_time)::numeric / 1000, 1) AS total_s, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family ORDER BY sum(calls) DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Top 20 by calls",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "id": 300,
+      "panels": [],
+      "title": "Database & statistics health",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Share of block requests served from shared_buffers since the database stats reset. The OLTP rule of thumb is 99 %, but this analytics-heavy database read 73 % before the August 2026 tuning and 94.6 % on 2026-09-02, so green starts at 97 % and red below 90 %.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 97
+              }
+            ]
+          },
+          "unit": "percent",
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 71
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^cache_hit_pct$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, round((100.0 * blk_read_time / NULLIF(active_time, 0))::numeric, 1) AS read_wait_pct, current_setting('track_io_timing') AS io_timing, temp_files, temp_bytes, stats_reset FROM pg_stat_database WHERE datname = current_database()",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Cache hit ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "blk_read_time as a share of active_time (PG14), both cumulative since the database stats reset. Needs track_io_timing=on (the io_timing tile; off on dev, so the share reads 0). 44 % on prod on 2026-09-02: nearly half of all statement time was waiting for disk reads.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "-"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "read_wait_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 20
+                    },
+                    {
+                      "color": "red",
+                      "value": 40
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "io_timing"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "off": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "off"
+                      },
+                      "on": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "on"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 71
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^(read_wait_pct|io_timing)$/",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, round((100.0 * blk_read_time / NULLIF(active_time, 0))::numeric, 1) AS read_wait_pct, current_setting('track_io_timing') AS io_timing, temp_files, temp_bytes, stats_reset FROM pg_stat_database WHERE datname = current_database()",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Read wait, share of active time",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Files and bytes written to disk for sorts and hashes that exceeded work_mem. Cumulative since the database stats reset; the Top 20 by temp written panel attributes it to statements when they survived eviction.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "-"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "temp_bytes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 71
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^temp_(files|bytes)$/",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, round((100.0 * blk_read_time / NULLIF(active_time, 0))::numeric, 1) AS read_wait_pct, current_setting('track_io_timing') AS io_timing, temp_files, temp_bytes, stats_reset FROM pg_stat_database WHERE datname = current_database()",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Temp spill since reset",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "When pg_stat_database counters were last reset. Stats survive a clean restart; an unclean shutdown (crash, OOM kill, SIGKILL on a slow stop) resets them. Every cumulative panel on this dashboard counts from here or from the pg_stat_statements reset shown in the pg_stat_statements health panel below.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "dateTimeAsIso",
+          "noValue": "-"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 71
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^stats_reset$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS cache_hit_pct, round((100.0 * blk_read_time / NULLIF(active_time, 0))::numeric, 1) AS read_wait_pct, current_setting('track_io_timing') AS io_timing, temp_files, temp_bytes, stats_reset FROM pg_stat_database WHERE datname = current_database()",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Stats reset (database)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "From pg_stat_bgwriter (PG14 to 16 columns; PG17 moves them to pg_stat_checkpointer and pg_stat_io). forced_pct: checkpoints requested rather than timed. WAL volume beyond max_wal_size is the usual cause, but restarts, explicit CHECKPOINT and CREATE DATABASE count too, so a yellow right after a deploy is expected. backend_to_ckpt_ratio: buffers written by backends themselves versus by the checkpointer; above 1 means backends are writing dirty pages, either evictions mid-query or bulk loads through ring buffers (prod was 13x before the August 2026 tuning). buffers_backend_fsync should stay 0.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "-"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "forced_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10
+                    },
+                    {
+                      "color": "red",
+                      "value": 30
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "backend_to_ckpt_ratio"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 3
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "buffers_backend_fsync"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "write_minutes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "m"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT checkpoints_timed, checkpoints_req, round(100.0 * checkpoints_req / NULLIF(checkpoints_timed + checkpoints_req, 0), 1) AS forced_pct, round(buffers_backend::numeric / NULLIF(buffers_checkpoint, 0), 2) AS backend_to_ckpt_ratio, buffers_backend_fsync, round(checkpoint_write_time / 1000 / 60) AS write_minutes FROM pg_stat_bgwriter",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Checkpoints & buffers",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Can the Statement statistics row be trusted? fill_pct near 100 plus growing evictions means rarely run statements are being dropped before anyone sees them. savepoint_pct above 0 means track_utility is still on and Django's uniquely named savepoints are flooding the table (prod: 99.9 % of entries on 2026-09-02). Reset with SELECT pg_stat_statements_reset() after changing the flag.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "-"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fill_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 80
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "evictions"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "savepoint_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "track_utility"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "off": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "off"
+                      },
+                      "on": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "on"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "days_since_reset"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 75
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "WITH s AS ( SELECT count(*) AS entries, count(*) FILTER (WHERE query ~* '^\\s*(SAVEPOINT|RELEASE\\s+SAVEPOINT|ROLLBACK\\s+TO)') AS savepoints FROM pg_stat_statements ) SELECT s.entries, current_setting('pg_stat_statements.max')::int AS max_entries, round(100.0 * s.entries / current_setting('pg_stat_statements.max')::int, 1) AS fill_pct, i.dealloc AS evictions, round(100.0 * s.savepoints / NULLIF(s.entries, 0), 1) AS savepoint_pct, current_setting('pg_stat_statements.track_utility') AS track_utility, round(EXTRACT(EPOCH FROM (now() - i.stats_reset)) / 86400, 1) AS days_since_reset FROM pg_stat_statements_info i, s",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "pg_stat_statements health",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 80
+      },
+      "id": 400,
+      "panels": [],
+      "title": "Indexes",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Definitive gaps for parent-row deletes and reverse lookups: no valid, non-partial index has the FK columns as its leading key columns. Empty is good. A row whose in_other_index is set means the column is indexed but not as the leading column, or only by a partial index: acceptable while parent_deletes stays 0 and nothing queries by that column alone. On prod the two rows (metagraph_bond and metagraph_weight target_neuron_id) are deliberate drops from migration 0007.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "table"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "columns"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "references"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "size"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "in_other_index"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 360
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "id": 15,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT c.conrelid::regclass::text AS \"table\", string_agg(a.attname, ',' ORDER BY x.n) AS columns, c.confrelid::regclass::text AS \"references\", pg_relation_size(c.conrelid) AS size, (SELECT string_agg(i.indexrelid::regclass::text, ',') FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey::smallint[] @> c.conkey) AS in_other_index, (SELECT n_tup_del FROM pg_stat_user_tables t WHERE t.relid = c.confrelid) AS parent_deletes FROM pg_constraint c CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS x(attnum, n) JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum WHERE c.contype = 'f' AND NOT EXISTS ( SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indisvalid AND i.indpred IS NULL AND i.indnkeyatts >= cardinality(c.conkey) AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] @> c.conkey AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] <@ c.conkey ) GROUP BY c.conrelid, c.conname, c.confrelid, c.conkey ORDER BY pg_relation_size(c.conrelid) DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Foreign keys without a leading-column index",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Every query the left index serves can use one of covered_by: same access method, operator classes, collations and ordering, and the left index's key columns are a leading prefix of the right one (or an exact duplicate, such as a leftover from an interrupted REINDEX CONCURRENTLY). Unique, primary, partial and expression indexes are never listed as redundant, and invalid indexes never count as cover. Dropping one trades a slightly wider index per lookup for less write amplification and disk. Django creates one automatically per ForeignKey; a unique_together on the same leading column makes it redundant. Prod 2026-09-03: 23 indexes, 8.5 GB.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "table"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redundant_index"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "covered_by"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "size"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 88
+      },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT a.indrelid::regclass::text AS \"table\", a.indexrelid::regclass::text AS redundant_index, string_agg(b.indexrelid::regclass::text, ', ' ORDER BY b.indnatts, b.indexrelid::regclass::text) AS covered_by, pg_relation_size(a.indexrelid) AS size, sa.idx_scan FROM pg_index a JOIN pg_index b ON b.indrelid = a.indrelid AND b.indexrelid <> a.indexrelid JOIN pg_class ca ON ca.oid = a.indexrelid JOIN pg_class cb ON cb.oid = b.indexrelid JOIN pg_stat_user_indexes sa ON sa.indexrelid = a.indexrelid WHERE ca.relam = cb.relam AND a.indpred IS NULL AND b.indpred IS NULL AND a.indexprs IS NULL AND b.indexprs IS NULL AND b.indisvalid AND NOT a.indisprimary AND NOT a.indisunique AND b.indnkeyatts >= a.indnkeyatts AND (b.indnatts > a.indnatts OR (b.indnatts = a.indnatts AND (b.indisunique OR a.indexrelid > b.indexrelid))) AND array_to_string((b.indkey::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indkey::smallint[], ',') AND array_to_string((b.indclass::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indclass::oid[], ',') AND array_to_string((b.indoption::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indoption::smallint[], ',') AND array_to_string((b.indcollation::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indcollation::oid[], ',') GROUP BY a.indrelid, a.indexrelid, sa.idx_scan ORDER BY pg_relation_size(a.indexrelid) DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Redundant indexes",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "Cumulative since the database stats reset. A handful of scans each reading hundreds of millions of rows is the signature of an unindexed dashboard query. Cancelled queries still count here even though they never reach pg_stat_statements. Small lookup tables are filtered out on purpose.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "table"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 260
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "size"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 96
+      },
+      "id": 17,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT relname AS \"table\", pg_relation_size(relid) AS size, seq_scan, seq_tup_read, round(seq_tup_read::numeric / NULLIF(seq_scan, 0)) AS rows_per_seq_scan, COALESCE(idx_scan, 0) AS idx_scan, round(100.0 * seq_scan / NULLIF(seq_scan + COALESCE(idx_scan, 0), 0), 1) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE pg_relation_size(relid) > 100 * 1024 * 1024 AND seq_scan > 0 ORDER BY seq_tup_read DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Sequential scans on tables over 100 MB",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgresql"
+      },
+      "description": "idx_blks_read counts index pages fetched from outside shared_buffers (OS cache or disk), cumulative since the database stats reset. Cost, not coverage: which indexes are cold. On prod, random-key inserts into the large unique indexes dominate (unique_neuron_block 1.6 TB, unique_bond 1.2 TB at 86 % hit on 2026-09-02).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "table"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "index"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 360
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "size"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "read_from_disk"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 104
+      },
+      "id": 18,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT s.relname AS \"table\", s.indexrelname AS index, pg_relation_size(s.indexrelid) AS size, s.idx_scan, io.idx_blks_read, round(100.0 * io.idx_blks_hit / NULLIF(io.idx_blks_hit + io.idx_blks_read, 0), 1) AS hit_pct, io.idx_blks_read * current_setting('block_size')::bigint AS read_from_disk FROM pg_stat_user_indexes s JOIN pg_statio_user_indexes io ON io.indexrelid = s.indexrelid WHERE io.idx_blks_read > 0 ORDER BY io.idx_blks_read DESC LIMIT 20",
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "title": "Indexes by blocks read from disk",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "sentinel",
+    "database",
+    "operations",
+    "performance"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "timezone": "",
+  "title": "DB Query Performance",
+  "uid": "db-query-performance",
+  "version": 1,
+  "weekStart": ""
+}

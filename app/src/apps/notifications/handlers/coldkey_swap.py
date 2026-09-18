@@ -1,7 +1,7 @@
 from typing import Any, ClassVar
 
 import structlog
-from bittensor import Keypair
+from bittensor.sp_core import ss58_encode
 
 from apps.metagraph.models import Coldkey
 from apps.metagraph.services.coldkey_roles import ColdkeyRoles, resolve_coldkey_roles
@@ -13,12 +13,14 @@ logger = structlog.get_logger()
 
 _HEX_KEY_ARGS = {"old_coldkey", "new_coldkey", "coldkey", "new_coldkey_hash"}
 
+BITTENSOR_SS58_FORMAT = 42
+
 
 def _format_arg(name: str, value: Any) -> str:
     """Format a call argument, converting hex public keys to SS58 addresses."""
     if name in _HEX_KEY_ARGS and isinstance(value, str) and value.startswith("0x"):
         try:
-            return Keypair(public_key=value).ss58_address
+            return ss58_encode(bytes.fromhex(value[2:]), BITTENSOR_SS58_FORMAT)
         except Exception:  # noqa: BLE001
             logger.debug("Failed to convert hex to SS58", name=name, value=value)
     return str(value) if value is not None else "N/A"

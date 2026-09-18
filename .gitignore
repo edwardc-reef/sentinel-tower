@@ -34,3 +34,4 @@ docs/superpowers/
 webhooks.csv
 webhooks.sql
 .claude
+.ruff_cache

@@ -21,7 +21,7 @@ from typing import Any
 import bittensor as bt
 import pytest
 import xxhash
-from bittensor import Keypair
+from bittensor.sp_core import Keypair
 from sentinel.v1.providers.bittensor import BittensorProvider, bittensor_provider
 
 from apps.notifications import channels
@@ -59,11 +59,10 @@ def _localnet_url() -> str:
     return os.environ.get("E2E_LOCALNET_URL", DEFAULT_LOCALNET_URL)
 
 
-def _get_expected_finney_runtime() -> str:
+def _get_expected_finney_runtime() -> int:
     """The localnet image should be using the same runtime as Finney"""
-    subtensor = bt.Subtensor(network="finney")  # or bt.SubtensorApi(...)
-    result = subtensor.substrate.rpc_request("state_getRuntimeVersion", [])
-    return result["result"]["specVersion"]
+    # Blocking mode exposes spec_version as a property; reading it hits the chain.
+    return bt.Subtensor(network="finney").spec_version
 
 
 def _twox128(data: bytes) -> bytes:
@@ -80,9 +79,8 @@ def _network_added_netuid(events: Any) -> int | None:
     emitted one. register_network carries no netuid arg, so this is the only place the
     real assigned netuid is observable at submit time — tests assert against it.
 
-    Reads a fully-decoded ``substrate.get_events(block_hash)`` list rather than the
-    receipt's ``triggered_events``, whose ``.value`` decodes lazily and returns None
-    right after submission.
+    Reads the fully-decoded events the submission result carries; a failed extrinsic
+    carries none, which is why this returns None rather than raising.
     """
     for event in events or []:
         value = getattr(event, "value", event)
@@ -153,44 +151,57 @@ class _NoOpResponse:
 class Localnet:
     """Drives the localnet: signs, submits, and reports where things landed."""
 
-    def __init__(self, provider: BittensorProvider) -> None:
+    def __init__(self, provider: BittensorProvider, subtensor: bt.Subtensor) -> None:
         self.provider = provider
+        # The provider covers reads the ingestion pipeline itself makes; signing and
+        # submitting is not part of its interface, so the tests hold their own client.
+        self.subtensor = subtensor
         self.sudo_keypair = Keypair.create_from_uri(SUDO_URI)
         self.secondary_keypair = Keypair.create_from_uri(SECONDARY_URI)
-
-    @property
-    def substrate(self) -> Any:
-        return self.provider.substrate
 
     def head(self) -> int:
         return self.provider.get_current_block()
 
     def compose(self, module: str, function: str, params: dict[str, Any]) -> Any:
-        return self.substrate.compose_call(
-            call_module=module,
-            call_function=function,
-            call_params=params,
-        )
+        """A call descriptor, addressed the way the SDK's generated catalog names it."""
+        return getattr(getattr(bt.calls, module), function)(**params)
 
     def submit(self, call: Any, keypair: Keypair | None = None) -> SubmittedExtrinsic:
         """Submit a call and wait for inclusion, returning where it landed."""
         signer = keypair or self.sudo_keypair
-        extrinsic = self.substrate.create_signed_extrinsic(call=call, keypair=signer)
-        receipt = self.substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
-        block_info = self.provider.get_block_info(block_hash=receipt.block_hash)
-        if block_info is None:
-            raise AssertionError(f"localnet returned no block for hash {receipt.block_hash}")
+        result = self.subtensor.submit_call(call, signer)
+        if not result.extrinsic_id:
+            raise AssertionError(f"localnet did not report where the extrinsic landed: {result.message}")
+        # "<block number>-<extrinsic index>", the only place the SDK reports either.
+        block_number, _, index = result.extrinsic_id.partition("-")
         return SubmittedExtrinsic(
-            block_number=block_info.number,
-            extrinsic_hash=str(receipt.extrinsic_hash),
-            success=bool(receipt.is_success),
-            netuid=_network_added_netuid(self.substrate.get_events(receipt.block_hash)),
+            block_number=int(block_number),
+            extrinsic_hash=self._extrinsic_hash(int(block_number), int(index)),
+            success=bool(result.success),
+            netuid=_network_added_netuid(result.events),
         )
+
+    def _extrinsic_hash(self, block_number: int, index: int) -> str:
+        """The hash of one extrinsic, read back through the ingestion provider.
+
+        The SDK reports an extrinsic's position, not its hash, so the hash comes from
+        the block itself — via the same provider the pipeline ingests with, which is
+        exactly the value the assertions then look up in the database.
+        """
+        block_hash = self.provider.get_block_hash(block_number)
+        if block_hash is None:
+            raise AssertionError(f"localnet returned no block {block_number}")
+        extrinsics = self.provider.get_extrinsics(block_hash) or []
+        if index >= len(extrinsics):
+            raise AssertionError(f"block {block_number} has no extrinsic at index {index}")
+        return str(extrinsics[index]["extrinsic_hash"])
 
     def submit_sudo(self, module: str, function: str, params: dict[str, Any]) -> SubmittedExtrinsic:
         """Submit `Sudo.sudo(inner)` — the path governance actions actually take."""
-        inner = self.compose(module, function, params)
-        return self.submit(self.compose("Sudo", "sudo", {"call": inner}))
+        # A nested call has to be composed against the runtime before it can be a
+        # parameter of the outer one.
+        inner = self.subtensor.compose(self.compose(module, function, params))
+        return self.submit(bt.calls.Sudo.sudo(call=inner))
 
     def fund(self, keypair: Keypair, rao: int) -> SubmittedExtrinsic:
         return self.submit_sudo("Balances", "force_set_balance", {"who": keypair.ss58_address, "new_free": rao})
@@ -208,10 +219,13 @@ class Localnet:
         self.submit_sudo("System", "set_storage", {"items": [[key, value]]})
 
     def free_balance(self, keypair: Keypair) -> int:
-        account = self.substrate.query("System", "Account", [keypair.ss58_address])
+        account = self.subtensor.query(bt.storage.System.Account, [keypair.ss58_address])
         free = account["data"]["free"]
         # Newer runtimes wrap balances in a single-element tuple.
-        return int(free[0]) if isinstance(free, tuple) else int(free)
+        if isinstance(free, tuple):
+            free = free[0]
+        # A TaoBalance-typed field decodes to a Balance rather than a bare int.
+        return int(getattr(free, "rao", free))
 
     def announce_coldkey_swap(self, keypair: Keypair | None = None) -> SubmittedExtrinsic:
         """Announce a real coldkey swap. The handler matches `announce_coldkey_swap`.
@@ -299,34 +313,34 @@ def localnet() -> Iterator[Localnet]:
         )
 
     assert provider is not None
-    chain = Localnet(provider)
+    subtensor = bt.Subtensor(network=url)
+    chain = Localnet(provider, subtensor)
 
     # TODO: There have been instances where Finney's runtime did not match the main runtime, causing code that
     # works on Finney to not work on the tests. There's no hard and fast rule when this happens, though, as far
     # as I'm aware and it's not an issue right now but I'm keeping the version check here in case someone runs
     # into this problem in the future.
-    # runtime = chain.substrate.rpc_request("state_getRuntimeVersion", [])["result"]
-    # spec_version = runtime["specVersion"]
+    # spec_version = chain.subtensor.spec_version
     # finney_spec_version = _get_expected_finney_runtime()
     # if spec_version != finney_spec_version:
     #     provider.close()
     #     pytest.fail(
     #         f"Localnet at {url} runs runtime specVersion {spec_version}, "
     #         f"but these tests require {finney_spec_version} (finney's version).\n"
-    #         f"A newer runtime breaks the bittensor SDK's metagraph/hyperparam calls.\n"
-    #         f"Use ghcr.io/opentensor/subtensor-localnet:v3.4.9-424 — the tag suffix is the runtime version.",
+    #         f"The localnet image is pinned by digest in envs/dev/docker-compose.yml; "
+    #         f"see QA.md for how to move the pin.",
     #         pytrace=False,
     #     )
 
     # Prove the actor roles rather than trusting the fixture's naming.
-    on_chain_sudo = chain.substrate.query("Sudo", "Key")
+    on_chain_sudo = chain.subtensor.query(bt.storage.Sudo.Key)
     on_chain_sudo_address = getattr(on_chain_sudo, "value", on_chain_sudo)
     assert on_chain_sudo_address == chain.sudo_keypair.ss58_address, (
         f"{SUDO_URI} is not the sudo key on this chain (sudo is {on_chain_sudo_address}); "
         f"the governance tests would not exercise the real sudo path."
     )
 
-    subnet_exists = chain.substrate.query("SubtensorModule", "NetworksAdded", [GENESIS_NETUID])
+    subnet_exists = chain.subtensor.query(bt.storage.SubtensorModule.NetworksAdded, [GENESIS_NETUID])
     assert getattr(subnet_exists, "value", subnet_exists) is True, (
         f"netuid {GENESIS_NETUID} does not exist on this localnet; the chainspec is not the expected one."
     )
@@ -340,6 +354,7 @@ def localnet() -> Iterator[Localnet]:
 
     yield chain
 
+    subtensor.close()
     provider.close()
 
 

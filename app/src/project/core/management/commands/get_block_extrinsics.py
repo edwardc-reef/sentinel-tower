@@ -1,6 +1,6 @@
 """Fetch and display extrinsics from the current (or specified) block."""
 
-from async_substrate_interface import SubstrateInterface
+import bittensor as bt
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
 
@@ -15,45 +15,36 @@ class Command(BaseCommand):
             "--url",
             type=str,
             default=None,
-            help=f"Node WebSocket URL (default: settings.BITTENSOR_NETWORK or {DEFAULT_URL})",
+            help=f"Node WebSocket URL or network name (default: settings.BITTENSOR_NETWORK or {DEFAULT_URL})",
         )
         parser.add_argument(
             "--block",
             type=int,
             default=None,
-            help="Block number to query (default: latest finalized block)",
+            help="Block number to query (default: chain head)",
         )
 
     def handle(self, *args, **options) -> None:
         network = options["url"] or getattr(settings, "BITTENSOR_NETWORK", DEFAULT_URL)
         self.stdout.write(f"Connecting to {network}...")
-        substrate = SubstrateInterface(url=network)
+        subtensor = bt.Subtensor(network=network)
 
-        block_number = options["block"]
-        if block_number is not None:
-            block_hash = substrate.get_block_hash(block_number)
-            if not block_hash:
-                self.stderr.write(self.style.ERROR(f"Block {block_number} not found"))
-                return
-        else:
-            block_hash = None
-            block_number = substrate.get_block_number(None)
-
-        self.stdout.write(self.style.SUCCESS(f"Block #{block_number} (hash: {block_hash or 'latest'})"))
-
-        block = substrate.get_block(block_hash=block_hash)
+        block = subtensor.block_info(options["block"])
         if block is None:
-            self.stderr.write(self.style.ERROR(f"Block {block_number} not found"))
+            self.stderr.write(self.style.ERROR(f"Block {options['block']} not found"))
             return
-        extrinsics = block["block"]["extrinsics"]
 
-        if not extrinsics:
+        self.stdout.write(self.style.SUCCESS(f"Block #{block.number} (hash: {block.hash})"))
+
+        if not block.extrinsics:
             self.stdout.write("No extrinsics in this block.")
             return
 
-        self.stdout.write(f"\nFound {len(extrinsics)} extrinsic(s):\n")
-        for i, ext in enumerate(extrinsics):
-            call = ext.value.get("call", {}) if hasattr(ext, "value") else ext.get("call", {})
+        self.stdout.write(f"\nFound {len(block.extrinsics)} extrinsic(s):\n")
+        for i, extrinsic in enumerate(block.extrinsics):
+            # The SDK reports an undecodable extrinsic as None rather than dropping it,
+            # so the index still lines up with the block's own ordering.
+            call = (extrinsic or {}).get("call", {})
             module = call.get("call_module", "?")
             function = call.get("call_function", "?")
             args = call.get("call_args", [])

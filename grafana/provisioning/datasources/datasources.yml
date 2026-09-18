@@ -26,3 +26,20 @@ datasources:
       maxIdleConns: 2
       connMaxLifetime: 14400
     editable: false
+
+  # Central Loki, read side. The push credentials Alloy uses (LOKI_USER /
+  # LOKI_PASSWORD) only open /loki/api/v1/push; queries need a reader token
+  # issued at https://loki.reef.pl/token/ (see docs/postgres-slow-statements.md).
+  # Feeds the Postgres Slow Statements dashboard.
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: $LOKI_URL
+    basicAuth: true
+    basicAuthUser: $LOKI_READER_USER
+    secureJsonData:
+      basicAuthPassword: $LOKI_READER_PASSWORD
+    jsonData:
+      maxLines: 1000
+    editable: false

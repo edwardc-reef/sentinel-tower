@@ -59,6 +59,12 @@ services:
 
   db:
     image: mirror.gcr.io/postgres:14.0-alpine
+    # pg_stat_statements must be preloaded or every query against the view errors;
+    # the extension itself is created by envs/dev/db-init on a fresh volume.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
     healthcheck:
       test: pg_isready -U ${POSTGRES_USER} || exit 1
     environment:
@@ -143,6 +149,11 @@ services:
       # dashboards work without any role setup.
       - GRAFANA_READER_USER=${GRAFANA_READER_USER:-${POSTGRES_USER}}
       - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD:-${POSTGRES_PASSWORD}}
+      # Loki data source (Postgres Slow Statements dashboard). Reader token from
+      # https://loki.reef.pl/token/, not the push credentials Alloy uses.
+      - LOKI_URL=${LOKI_URL}
+      - LOKI_READER_USER=${LOKI_READER_USER:-}
+      - LOKI_READER_PASSWORD=${LOKI_READER_PASSWORD:-}
       - BLOCK_END=${BLOCK_END:-5000000}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -153,11 +164,12 @@ services:
       - prometheus
       - db
 
-  # Subtensor localnet for end-to-end tests. Pinned to runtime specVersion 424 (the tag
-  # suffix), which matches finney — a newer runtime breaks the bittensor SDK's
-  # metagraph/hyperparam calls. Start with: docker compose --profile e2e up -d localnet
+  # Subtensor localnet for end-to-end tests. The chain moved to RaoFoundation, which
+  # publishes no runtime-suffixed tags, so the pin is by digest — `latest` alone would
+  # silently change the runtime under the suite. This digest is runtime specVersion 454.
+  # Start with: docker compose --profile e2e up -d localnet
   localnet:
-    image: ghcr.io/opentensor/subtensor-localnet:latest
+    image: ghcr.io/raofoundation/subtensor-localnet:latest@sha256:01e02515a4237e2a9d6de5759b1a27d0a5bb440a8d363e1bf6a4f448f5542ba2
     ports:
       - ${LOCALNET_PORT:-9944}:9944
       - ${LOCALNET_PORT_ALT:-9945}:9945

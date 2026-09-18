@@ -27,13 +27,7 @@ docker compose up -d db redis                          # unit + e2e need these
 docker compose --profile e2e up -d localnet            # e2e also needs the chain
 ```
 
-The e2e localnet **must** run runtime specVersion **424** — the image is pinned to
-`ghcr.io/opentensor/subtensor-localnet:v3.4.9-424` (the tag suffix is the runtime
-version, which matches finney). A newer runtime (e.g. the `raofoundation/...:devnet`
-image's 431) types `NetUid` as a composite newtype that bittensor 10.x cannot encode, so
-every metagraph/hyperparam call fails with `Invalid type for data`. The e2e conftest
-asserts the runtime version up front and fails loudly if it is wrong. Override the node
-URL with `E2E_LOCALNET_URL` if needed.
+The e2e localnet is pinned by digest to `ghcr.io/raofoundation/subtensor-localnet:latest`.
 
 ## What deserves an e2e test here
 
@@ -101,6 +95,17 @@ That shapes the whole design:
   path is covered by the metagraph sync-service unit tests.
 - **APY (§2.4) is not e2e**: it needs multi-epoch dividend history the localnet does not
   accrue. The APY view is unit-tested (`tests/metagraph/test_apy_epoch_view.py`).
+- **Burn/emission metrics are covered e2e only for the chain reads.**
+  `tests/e2e/test_burn_and_emissions.py` proves `BittensorProvider.get_subnet_emission_enabled`
+  and `get_block_timestamp` decode the real runtime's values correctly and
+  that a sample lands as `MetaEpoch` + `SubnetEmission` rows using an ingested anchor
+  `Block`. Burn itself is **not** e2e because its arithmetic is pure DB logic; the same
+  public-service unit tests cover that calculation, reuse of an ingested block, creation
+  of a missing block with empty dump metadata, and live-to-archive timestamp fallback.
+- **The emission fixture waits for a fresh anchor rather than reaching back for one.**
+  Root-epoch starts are 361 blocks apart, so the latest one can be up to 360 blocks behind
+  head and unreadable on a pruning node. `recent_meta_epoch_anchor` waits until an anchor
+  is within 200 blocks of head — the same position the daemon sees it from.
 - **Error-code seed was fixed, not just tested.** The e2e failure-decoding test
   (`§1.5`) surfaced that migration 0010 seeded `subtensor_error_codes` from a stale enum
   ordering — off by one from index 23, so 94 of 135 codes decoded to the wrong name.

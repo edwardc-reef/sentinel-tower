@@ -1,5 +1,6 @@
 """Django models for metagraph data storage."""
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 
@@ -395,6 +396,22 @@ class MetagraphDump(models.Model):
         on_delete=models.CASCADE,
         related_name="metagraph_dumps",
     )
+    # Freezes the subnet owner as observed at ``block``.
+    # :attr:`Subnet.owner_hotkey` only ever holds the *latest* owner, so anything
+    # recomputed from a historical dump — :class:`SubnetBurn` in particular — has to
+    # read the identity from here; using the subnet row would apply an ownership or
+    # coldkey change retroactively to every older epoch.
+    owner_hotkey = models.ForeignKey(
+        Hotkey,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owned_subnet_dumps",
+        help_text=(
+            "Subnet owner hotkey at this dump's block. Null when the chain reported no owner, "
+            "or for dumps taken before per-block owners were recorded."
+        ),
+    )
     epoch_position = models.PositiveIntegerField(null=True, blank=True)
     tempo = models.PositiveIntegerField(
         null=True,
@@ -416,6 +433,115 @@ class MetagraphDump(models.Model):
 
     def __str__(self) -> str:
         return f"Dump for subnet {self.netuid} at block {self.block.pk}"
+
+
+class MetaEpoch(models.Model):
+    """Root-subnet epoch anchor — the shared time bucket burn and emission rows align on.
+
+    Every subnet runs its own epoch schedule, offset by its netuid, so per-subnet
+    values taken "at epoch start" land on 128 different blocks. Comparing subnets
+    side by side (the burn/emission heatmaps) needs one common bucket, so each
+    per-subnet value is filed under the *root* (netuid 0) epoch that contains the
+    block it was computed from.
+
+    ``block`` is the first block of that root epoch. Sentinel normally ingests that
+    block while scraping the configured subnets. If it is missing, burn or
+    emission syncing recovers its timestamp from the chain and creates a block
+    row without dump metadata before creating the meta epoch.
+    """
+
+    block = models.OneToOneField(
+        Block,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="meta_epoch",
+    )
+
+    class Meta:
+        db_table = "metagraph_meta_epoch"
+        verbose_name = "meta epoch"
+        verbose_name_plural = "meta epochs"
+
+    def __str__(self) -> str:
+        return f"Meta epoch starting at block {self.block_id} ({self.block.timestamp})"
+
+
+class SubnetBurn(models.Model):
+    """Cached per-subnet burn and superburn for one meta epoch.
+
+    Both values are the share of a subnet's incentive that goes to a single
+    coldkey, averaged over the subnet's mechanisms so each mechanism counts
+    equally:
+
+    * ``burn`` uses the subnet owner's coldkey — incentive the owner pays back
+      to itself rather than to miners.
+    * ``superburn`` uses ``settings.METAGRAPH_SUPERBURN_COLDKEY`` — the same
+      measurement for one externally interesting coldkey.
+
+    Neither is source data: both are recomputable from :class:`MechanismMetrics`
+    at ``source_block_number``. They are cached because those snapshot rows are
+    pruned by retention (see ``apps.metagraph.retention``) while the dashboards
+    need months of history.
+    """
+
+    subnet = models.ForeignKey(Subnet, on_delete=models.CASCADE, related_name="burns")
+    meta_epoch = models.ForeignKey(MetaEpoch, on_delete=models.CASCADE, related_name="burns")
+    source_block_number = models.PositiveBigIntegerField(
+        help_text="Subnet epoch-start block the values were computed from.",
+    )
+    burn = models.FloatField(
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Owner-coldkey share of subnet incentive, averaged across mechanisms (0-1).",
+    )
+    superburn = models.FloatField(
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Superburn-coldkey share of subnet incentive, averaged across mechanisms (0-1).",
+    )
+
+    class Meta:
+        db_table = "metagraph_subnet_burn"
+        constraints = [
+            models.UniqueConstraint(fields=["subnet", "meta_epoch"], name="unique_subnet_burn"),
+            models.CheckConstraint(
+                condition=Q(burn__gte=0.0) & Q(burn__lte=1.0),
+                name="subnet_burn_between_0_and_1",
+            ),
+            models.CheckConstraint(
+                condition=Q(superburn__gte=0.0) & Q(superburn__lte=1.0),
+                name="subnet_superburn_between_0_and_1",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["meta_epoch", "subnet"], name="idx_subnet_burn_epoch"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Burn subnet {self.subnet_id} @ meta epoch {self.meta_epoch_id}: {self.burn}"
+
+
+class SubnetEmission(models.Model):
+    """Cached ``SubtensorModule.SubnetEmissionEnabled`` value for one subnet and meta epoch.
+
+    Read straight from chain storage at the meta-epoch's first block — unlike
+    :class:`SubnetBurn` there is no way to recover it later from stored snapshots,
+    which is why it is sampled once per meta epoch as the chain advances.
+    """
+
+    subnet = models.ForeignKey(Subnet, on_delete=models.CASCADE, related_name="emissions")
+    meta_epoch = models.ForeignKey(MetaEpoch, on_delete=models.CASCADE, related_name="emissions")
+    emission_enabled = models.BooleanField()
+
+    class Meta:
+        db_table = "metagraph_subnet_emission"
+        constraints = [
+            models.UniqueConstraint(fields=["subnet", "meta_epoch"], name="unique_subnet_emission"),
+        ]
+        indexes = [
+            models.Index(fields=["meta_epoch", "subnet"], name="idx_subnet_emission_epoch"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Emission subnet {self.subnet_id} @ meta epoch {self.meta_epoch_id}: {self.emission_enabled}"
 
 
 class SnapshotHealthMetric(models.Model):

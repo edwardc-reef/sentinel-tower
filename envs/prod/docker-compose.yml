@@ -96,6 +96,20 @@ services:
       - auto_explain.log_buffers=on
       - -c
       - auto_explain.log_timing=off
+      # --- statement statistics hygiene -------------------------------------
+      # Utility statements are tracked by text, and Django's get_or_create /
+      # update_or_create wrap each row in a uniquely named SAVEPOINT, so every
+      # one is a new entry: 47,953 of 48,014 entries and 221k evictions in 28
+      # days (2026-09-02). Off = only plannable statements are tracked;
+      # REFRESH/VACUUM/DDL drop out of the view but still reach the slow log.
+      # Reset the view once after the restart (docs/postgres-tuning.md,
+      # Rollout).
+      - -c
+      - pg_stat_statements.track_utility=${POSTGRES_PGSS_TRACK_UTILITY:-off}
+      # The default prefix ('%m [%p] ') makes slow-log lines unattributable.
+      # Adds user@db and application_name (empty until clients set one).
+      - -c
+      - "log_line_prefix=%m [%p] %q%u@%d app=%a "
     healthcheck:
       test: pg_isready -U ${POSTGRES_USER} || exit 1
     restart: unless-stopped
@@ -614,6 +628,11 @@ services:
       # dashboards work without any role setup.
       - GRAFANA_READER_USER=${GRAFANA_READER_USER:-${POSTGRES_USER}}
       - GRAFANA_READER_PASSWORD=${GRAFANA_READER_PASSWORD:-${POSTGRES_PASSWORD}}
+      # Loki data source (Postgres Slow Statements dashboard). Reader token from
+      # https://loki.reef.pl/token/, not the push credentials Alloy uses.
+      - LOKI_URL=${LOKI_URL}
+      - LOKI_READER_USER=${LOKI_READER_USER:-}
+      - LOKI_READER_PASSWORD=${LOKI_READER_PASSWORD:-}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana

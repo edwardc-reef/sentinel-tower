@@ -7,6 +7,7 @@ from sentinel.v1.providers.base import BlockchainProvider
 from sentinel.v1.services.sentinel import sentinel_service
 
 import apps.metagraph.utils as metagraph_utils
+from apps.metagraph.services.burn_service import BurnService
 from apps.metagraph.services.metagraph_sync_service import DumpMetadata, MetagraphSyncService
 
 logger = structlog.get_logger()
@@ -77,6 +78,12 @@ def sync_metagraph_for_block(
     sync_ms = round((datetime.now(UTC) - t0).total_seconds() * 1000)
     log.debug("Synced metagraph to DB", sync_ms=sync_ms, **stats)
 
+    # Burn is derived from the mechanism metrics just written, so cache it before
+    # retention can prune them. The provider is only used if the root-epoch anchor
+    # block is unexpectedly absent from the ingested block table.
+    if dump_metadata.epoch_position == "start":
+        BurnService(provider).sync_burn(block_number, netuid)
+
     elapsed_ms = round((datetime.now(UTC) - started_at).total_seconds() * 1000)
     log.debug(
         "sync_metagraph_for_block completed",
@@ -87,6 +94,18 @@ def sync_metagraph_for_block(
     )
 
     return {"neurons": stats["neurons"], "weights": stats["weights"], "bonds": stats["bonds"], "elapsed_ms": elapsed_ms}
+
+
+def sync_subnet_emissions_for_block(block_number: int, provider: BlockchainProvider) -> int:
+    """
+    Sample ``SubnetEmissionEnabled`` for every subnet if this block starts a meta epoch.
+
+    Unlike burn, this value leaves no trace in the metagraph snapshots, so it has
+    to be read from chain storage while the block is still reachable. Returns the
+    number of subnets recorded — 0 when the block does not start a meta epoch, or
+    when the chain could not be read.
+    """
+    return len(BurnService(provider).sync_subnet_emissions(block_number))
 
 
 # @block_task(

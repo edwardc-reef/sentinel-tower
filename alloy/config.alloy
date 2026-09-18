@@ -20,10 +20,45 @@ discovery.relabel "containerlogs" {
 loki.source.docker "containerlogs" {
 	host             = "unix:///var/run/docker.sock"
 	targets          = discovery.docker.containerlogs.targets
-	forward_to       = [loki.write.default.receiver]
+	forward_to       = [loki.process.containerlogs.receiver]
 	relabel_rules    = discovery.relabel.containerlogs.rules
 }
 
+// Postgres writes one statement over several lines: the first line carries the
+// log_line_prefix (`%m [%p] `, optionally followed by user@db app=...), the
+// SQL continues on tab-indented lines without a prefix. Join them into one
+// entry so the slow-statement and STATEMENT lines keep their full SQL.
+// Everything that is not the db container passes through unchanged.
+loki.process "containerlogs" {
+	forward_to = [loki.write.default.receiver]
+
+	stage.match {
+		selector = "{container=~\".*-db-1\"}"
+
+		stage.multiline {
+			firstline     = "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\S+ \\[\\d+\\]"
+			max_wait_time = "3s"
+			max_lines     = 500
+		}
+
+		// The log_line_prefix (`%m [%p] %q%u@%d app=%a `) names the role and the
+		// application. Keep the role as a stream label (a handful of values) so
+		// the dashboard can filter by it. Background processes carry no role
+		// because of %q, so their lines simply get no label.
+		stage.regex {
+			expression = `^\S+ \S+ \S+ \[\d+\] (?P<db_user>[^@\s]+)@(?P<db_name>\S+) app=`
+		}
+
+		stage.labels {
+			values = {
+				db_user = "",
+			}
+		}
+	}
+}
+
+// Central Loki (https://loki.reef.pl). Credentials come from the monitoring
+// server, see README "Log aggregation"; with them unset nothing is shipped.
 loki.write "default" {
 	endpoint {
 		url = sys.env("LOKI_URL") + "/loki/api/v1/push"

@@ -6,7 +6,8 @@ from django.core.management.base import BaseCommand
 from sentinel.v1.providers.base import BlockchainProvider
 from sentinel.v1.providers.bittensor import bittensor_provider
 
-from apps.metagraph.block_tasks import sync_metagraph_for_block
+from apps.metagraph.block_tasks import sync_metagraph_for_block, sync_subnet_emissions_for_block
+from apps.metagraph.services.burn_service import BurnService
 from apps.metagraph.services.metagraph_service import MetagraphService
 from project.core.services.bittensor_connection import ProviderReconnectBackoff
 
@@ -147,8 +148,11 @@ class Command(BaseCommand):
                     dumpable_netuids = [
                         netuid for netuid in netuids if MetagraphService.is_dumpable_block(block_number, netuid)
                     ]
+                    # Emissions must be sampled at every root-subnet epoch start,
+                    # including anchors with no subnet dump scheduled for this block.
+                    starts_meta_epoch = BurnService.is_meta_epoch_start(block_number)
 
-                    if not dumpable_netuids:
+                    if not dumpable_netuids and not starts_meta_epoch:
                         logger.debug("No subnets dumpable at block", block_number=block_number)
                         last_processed_block = block_number
                         continue
@@ -167,6 +171,12 @@ class Command(BaseCommand):
                                 )
                             else:
                                 logger.debug("No metagraph data", block=block_number, netuid=netuid)
+                        if starts_meta_epoch:
+                            # Run after this block's metagraph dumps so the emission
+                            # sync can reuse their Block row. An unreadable emission
+                            # sample reports 0 rather than costing the block's dumps.
+                            subnets = sync_subnet_emissions_for_block(block_number, provider)
+                            logger.info("Subnet emissions synced", block=block_number, subnets=subnets)
                         last_processed_block = block_number
                     except Exception:
                         self._close_provider(provider)

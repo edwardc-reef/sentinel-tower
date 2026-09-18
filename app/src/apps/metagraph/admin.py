@@ -8,10 +8,13 @@ from .models import (
     EvmKey,
     Hotkey,
     MechanismMetrics,
+    MetaEpoch,
     MetagraphDump,
     Neuron,
     NeuronSnapshot,
     Subnet,
+    SubnetBurn,
+    SubnetEmission,
     Weight,
 )
 
@@ -176,11 +179,42 @@ class MetagraphDumpAdmin(admin.ModelAdmin):
         "id",
         "netuid",
         "block",
+        "owner_hotkey",
         "epoch_position",
         "started_at",
         "finished_at",
     )
-    search_fields = ("netuid",)
+    search_fields = ("netuid", "owner_hotkey__hotkey")
     list_filter = ("netuid", "block")
-    raw_id_fields = ("block",)
+    raw_id_fields = ("block", "owner_hotkey")
     readonly_fields = ("created_at",)
+
+
+@admin.register(MetaEpoch)
+class MetaEpochAdmin(admin.ModelAdmin):
+    list_display = ("block", "block_timestamp")
+    search_fields = ("block__number",)
+    raw_id_fields = ("block",)
+    ordering = ("-block__number",)
+
+    @admin.display(description="Timestamp", ordering="block__timestamp")
+    def block_timestamp(self, obj: MetaEpoch):
+        return obj.block.timestamp
+
+
+@admin.register(SubnetBurn)
+class SubnetBurnAdmin(admin.ModelAdmin):
+    list_display = ("id", "subnet", "meta_epoch", "source_block_number", "burn", "superburn")
+    search_fields = ("subnet__netuid", "source_block_number")
+    list_filter = ("subnet",)
+    raw_id_fields = ("subnet", "meta_epoch")
+    ordering = ("-meta_epoch", "subnet")
+
+
+@admin.register(SubnetEmission)
+class SubnetEmissionAdmin(admin.ModelAdmin):
+    list_display = ("id", "subnet", "meta_epoch", "emission_enabled")
+    search_fields = ("subnet__netuid",)
+    list_filter = ("emission_enabled", "subnet")
+    raw_id_fields = ("subnet", "meta_epoch")
+    ordering = ("-meta_epoch", "subnet")

@@ -1,5 +1,4 @@
 import factory
-from django.utils import timezone
 from factory.django import DjangoModelFactory
 
 import apps.metagraph.models as metagraph_models
@@ -139,17 +138,29 @@ class MetagraphDumpFactory(DjangoModelFactory):
     block = factory.SubFactory(BlockFactory)
 
 
-class ValidatorApyEpochFactory(DjangoModelFactory):
+class MetaEpochFactory(DjangoModelFactory):
     class Meta:
-        model = metagraph_models.ValidatorApyEpoch
+        model = metagraph_models.MetaEpoch
+        django_get_or_create = ("block",)
 
-    subnet_id = factory.Sequence(lambda n: n + 1)
-    neuron = factory.SubFactory(NeuronFactory)
-    hotkey = factory.LazyAttribute(lambda o: o.neuron.hotkey)
-    epoch_block = factory.Sequence(lambda n: 1000 + n * 360)
-    epoch_ts = factory.LazyFunction(timezone.now)
-    alpha_stake = 10**12
-    alpha_dividends = 10**9
-    total_stake = 10**12
-    tempo = 360
-    apy_pct = 0.0
+    block = factory.SubFactory(BlockFactory)
+
+
+class SubnetBurnFactory(DjangoModelFactory):
+    class Meta:
+        model = metagraph_models.SubnetBurn
+
+    subnet = factory.SubFactory(SubnetFactory)
+    meta_epoch = factory.SubFactory(MetaEpochFactory)
+    source_block_number = factory.LazyAttribute(lambda o: o.meta_epoch.block_id)
+    burn = 0.0
+    superburn = 0.0
+
+
+class SubnetEmissionFactory(DjangoModelFactory):
+    class Meta:
+        model = metagraph_models.SubnetEmission
+
+    subnet = factory.SubFactory(SubnetFactory)
+    meta_epoch = factory.SubFactory(MetaEpochFactory)
+    emission_enabled = True

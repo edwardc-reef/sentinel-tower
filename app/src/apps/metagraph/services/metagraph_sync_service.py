@@ -221,6 +221,12 @@ class MetagraphSyncService:
             if owner_hotkey and subnet.owner_hotkey_id != owner_hotkey.id:
                 subnet.owner_hotkey = owner_hotkey
                 updated = True
+            # A subnet row can predate its first dump: BurnService.sync_subnet_emissions
+            # creates placeholders for every netuid the chain reports. Registration time
+            # never changes on chain, so fill it in once and never overwrite it.
+            if registered_at and subnet.registered_at is None:
+                subnet.registered_at = registered_at
+                updated = True
             if alpha_out_emission_rao and subnet.alpha_out_emission != alpha_out_emission_rao:
                 subnet.alpha_out_emission = alpha_out_emission_rao
                 updated = True
@@ -342,6 +348,7 @@ class MetagraphSyncService:
             netuid=dump_metadata.netuid,
             block=block,
             defaults={
+                "owner_hotkey_id": subnet.owner_hotkey_id,
                 "epoch_position": epoch_position,
                 "started_at": dump_metadata.started_at,
                 "finished_at": dump_metadata.finished_at,

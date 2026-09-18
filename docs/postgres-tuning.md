@@ -2,7 +2,8 @@
 
 All settings live in the `db` service `command:` block of
 [`envs/prod/docker-compose.yml`](../envs/prod/docker-compose.yml) as `-c` flags,
-each overridable from `.env`. Command-line flags outrank both `postgresql.conf`
+most of them overridable from `.env` (`log_line_prefix` is fixed because a default with
+embedded spaces would need quoting in the template). Command-line flags outrank both `postgresql.conf`
 and `postgresql.auto.conf`, so this file is the single source of truth for
 anything listed there.
 
@@ -45,6 +46,8 @@ no record of what any client actually ran.
 | `log_lock_waits` | off | **on** | Catches contention (e.g. during MV refresh) |
 | `log_temp_files` | -1 (off) | **10240** kB | Catches `work_mem` overflow spilling to disk |
 | `auto_explain.*` | absent | see below | Logs the *actual plan* for anything over 5 s |
+| `pg_stat_statements.track_utility` | on | **off** | Django savepoints have unique names; 47,953 of 48,014 entries were `SAVEPOINT`/`RELEASE` on 2026-09-02. Trade-off: `REFRESH MATERIALIZED VIEW`, `VACUUM` and DDL no longer appear in `pg_stat_statements` at all; use the slow log or `pg_stat_activity` for those |
+| `log_line_prefix` | `%m [%p] ` | `%m [%p] %q%u@%d app=%a ` | Slow-log lines carry user, database and application name |
 
 Two values are set via `ALTER SYSTEM` on prod and are deliberately **not**
 repeated in the compose file, so they keep working untouched:
@@ -125,6 +128,19 @@ docker compose logs -f db      # watch for a clean startup
 Expect a short outage (seconds to ~a minute). The app, celery and
 `sync-*` containers will throw connection errors and reconnect.
 
+Then restart the sync daemons: `docker compose restart sync-extrinsics sync-metagraph`.
+They reopen the chain connection on error but never reset Django's dead database connection, which looped and leaked memory after the 2026-07-21 restart; `./deploy.sh` restarts them for you, the bare `up -d db` above does not.
+
+After the first restart with `pg_stat_statements.track_utility=off`, reset the statement statistics once so the accumulated savepoint entries disappear:
+
+```sh
+docker compose exec db psql -U postgres -d project -c 'SELECT pg_stat_statements_reset();'
+```
+
+The `pg_stat_statements health` panel on the DB Query Performance dashboard should then show `savepoint_pct` at 0 and `evictions` at 0.
+A slow climb of `evictions` months later is the churn of one-off DDL and refresh internals, not the savepoint problem returning; a second reset clears it.
+That panel reads `pg_stat_statements_info`, which exists from extension version 1.9; an extension created at 1.8 on a PG14 binary needs a one-time `ALTER EXTENSION pg_stat_statements UPDATE;` (prod is already at 1.9).
+
 > The deployed `docker-compose.yml` on the server has drifted from
 > `envs/prod/docker-compose.yml` in this repo. Reconcile before deploying, or
 > the `command:` block will not match what is documented here.
@@ -137,6 +153,8 @@ docker compose exec db psql -U postgres -d project \
   -c 'SHOW shared_preload_libraries;' \
   -c 'SHOW random_page_cost;' \
   -c 'SHOW track_io_timing;' \
+  -c 'SHOW pg_stat_statements.track_utility;' \
+  -c 'SHOW log_line_prefix;' \
   -c 'SELECT count(*) FROM pg_stat_statements;'
 ```
 
@@ -155,33 +173,8 @@ docker compose run --rm db postgres -c shared_preload_libraries=pg_stat_statemen
 
 ## What to look at afterwards
 
-Once this has been running through a few dashboard views:
-
-```sql
--- Slowest statements, now with I/O time attributed
-SELECT round(mean_exec_time::numeric,1) AS mean_ms,
-       round(max_exec_time::numeric,1)  AS max_ms,
-       round(stddev_exec_time::numeric,1) AS stddev_ms,
-       calls,
-       round(blk_read_time::numeric)    AS io_read_ms,
-       left(query, 80) AS q
-FROM pg_stat_statements
-WHERE calls > 5
-ORDER BY mean_exec_time DESC LIMIT 20;
-```
-
-A high `stddev_ms` relative to `mean_ms`, plus large `io_read_ms`, is the
-signature of a cold-cache problem rather than a bad query.
-
-For plans, grep the container log for `auto_explain`:
-
-```sh
-docker compose logs db --since 24h | grep -A40 'duration:.*plan:'
-```
-
-Then compare `Buffers: shared hit=` against `read=`. Mostly `read=` means the
-query is I/O bound (cache/RAM problem); mostly `hit=` with a slow runtime means
-the plan itself is bad (query/index problem).
+Open the **DB Query Performance** Grafana dashboard (`grafana/provisioning/dashboards/db-query-performance.json`).
+How to read it, the log recipes for cancelled statements and plans, and the 2026-09-02 findings are in [postgres-query-performance.md](postgres-query-performance.md).
 
 ## Known constraints
 
