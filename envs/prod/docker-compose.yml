@@ -398,6 +398,7 @@ services:
     environment:
       - DEBUG=off
       - FLOWER_TASK_RUNTIME_METRIC_BUCKETS=1,2,3,5,10,20,30,45,60,120,180,240,300,600,inf
+      - OTEL_SERVICE_NAME=celery-flower
     command: celery --app=project --broker="${CELERY_BROKER_URL}" flower --basic_auth="${CELERY_FLOWER_USER}:${CELERY_FLOWER_PASSWORD}" --max_tasks=500
     depends_on:
       - celery-worker
@@ -509,7 +510,7 @@ services:
       <<: *logging
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    image: ghcr.io/google/cadvisor:v0.60.5
     container_name: cadvisor
     privileged: true
     devices:
