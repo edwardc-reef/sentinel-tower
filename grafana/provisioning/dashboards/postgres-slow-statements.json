@@ -20,7 +20,22 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "database"
+      ],
+      "targetBlank": false,
+      "title": "Database dashboards",
+      "tooltip": "Every dashboard tagged database",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "panels": [
     {
       "id": 1,
@@ -876,7 +891,8 @@
   "tags": [
     "postgres",
     "performance",
-    "loki"
+    "loki",
+    "database"
   ],
   "templating": {
     "list": [

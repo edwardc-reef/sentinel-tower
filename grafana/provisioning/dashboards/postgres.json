@@ -3,7 +3,8 @@
   "title": "PostgreSQL",
   "tags": [
     "postgres",
-    "monitoring"
+    "monitoring",
+    "database"
   ],
   "description": "What queries were made, how long they took, and what resources the database is using. Source: postgres-exporter (Prometheus) plus pg_stat_statements via the PostgreSQL datasource.",
   "editable": true,
@@ -79,7 +80,22 @@
   "annotations": {
     "list": []
   },
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "database"
+      ],
+      "targetBlank": false,
+      "title": "Database dashboards",
+      "tooltip": "Every dashboard tagged database",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "panels": [
     {
       "id": 1,

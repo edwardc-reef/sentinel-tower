@@ -25,13 +25,13 @@
       "asDropdown": true,
       "icon": "external link",
       "includeVars": false,
-      "keepTime": false,
+      "keepTime": true,
       "tags": [
         "database"
       ],
       "targetBlank": false,
       "title": "Database dashboards",
-      "tooltip": "DB Size & Retention and this dashboard",
+      "tooltip": "Every dashboard tagged database",
       "type": "dashboards",
       "url": ""
     }
