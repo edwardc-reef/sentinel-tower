@@ -2717,7 +2717,7 @@
         "type": "postgres",
         "uid": "postgresql"
       },
-      "description": "Statements that spilled sorts or hashes to disk: work_mem was too small for them. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log).",
+      "description": "Statements that spilled sorts or hashes to disk: work_mem was too small for them. Cumulative since the pg_stat_statements reset shown in the Database & statistics health row; entries can be evicted; statements cancelled before completion (Grafana timeouts) never appear here, see docs/postgres-query-performance.md for the log recipe. Rows group parameter-count variants of one query (IN lists, multi-row VALUES); stddev_ms, where shown, is the max over variants. Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded; on prod, track_utility=off also hides DDL, VACUUM and REFRESH MATERIALIZED VIEW (those still reach the slow log). Roles chosen in the Exclude roles dropdown are left out.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2831,7 +2831,7 @@
             "uid": "postgresql"
           },
           "rawQuery": true,
-          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' ) SELECT sum(calls) AS calls, (sum(temp_blks_written) * current_setting('block_size')::bigint)::bigint AS temp_written, (sum(temp_blks_read) * current_setting('block_size')::bigint)::bigint AS temp_read, (sum(temp_blks_written) * current_setting('block_size')::bigint / NULLIF(sum(calls), 0))::bigint AS temp_per_call, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family HAVING sum(temp_blks_written) > 0 ORDER BY sum(temp_blks_written) DESC LIMIT 20",
+          "rawSql": "WITH info AS ( SELECT GREATEST(EXTRACT(EPOCH FROM (now() - stats_reset)) / 86400, 1.0 / 24) AS days FROM pg_stat_statements_info ), s AS ( SELECT regexp_replace(regexp_replace(regexp_replace(query, '\\$\\d+', '?', 'g'), 'IN \\((\\?,\\s*)*\\?\\)', 'IN (...)', 'g'), ' VALUES \\((\\?,\\s*)*\\?\\)(,\\s*\\((\\?,\\s*)*\\?\\))*', ' VALUES (...)', 'g') AS family, userid, calls, total_exec_time, max_exec_time, stddev_exec_time, rows, shared_blks_hit, shared_blks_read, blk_read_time, temp_blks_read, temp_blks_written FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query !~* '^\\s*(SAVEPOINT|RELEASE|ROLLBACK|BEGIN|COMMIT|SET |SHOW |DEALLOCATE|DISCARD)' AND query !~ 'pg_stat_|pg_statio_|pg_blocking_pids|pg_constraint' AND NOT (userid::regrole::text = ANY (ARRAY[${exclude:sqlstring}]::text[])) ) SELECT sum(calls) AS calls, (sum(temp_blks_written) * current_setting('block_size')::bigint)::bigint AS temp_written, (sum(temp_blks_read) * current_setting('block_size')::bigint)::bigint AS temp_read, (sum(temp_blks_written) * current_setting('block_size')::bigint / NULLIF(sum(calls), 0))::bigint AS temp_per_call, round((sum(total_exec_time) / NULLIF(sum(calls), 0))::numeric, 2) AS mean_ms, string_agg(DISTINCT userid::regrole::text, ',') AS role, left(regexp_replace(family, '\\s+', ' ', 'g'), 120) AS query FROM s GROUP BY family HAVING sum(temp_blks_written) > 0 ORDER BY sum(temp_blks_written) DESC LIMIT 20",
           "refId": "A",
           "format": "table"
         }
@@ -3006,7 +3006,7 @@
         "type": "postgres",
         "uid": "postgresql"
       },
-      "description": "Client backends whose current statement started more than 2 s ago, oldest first. Includes 'idle in transaction' sessions on purpose: for those, age_s is time since their last statement, and a long idle transaction blocks vacuum. Text cut at 120 characters. Empty is the normal state.",
+      "description": "Client backends whose current statement started more than 2 s ago, oldest first. Includes 'idle in transaction' sessions on purpose: for those, age_s is time since their last statement, and a long idle transaction blocks vacuum. Text cut at 120 characters. Empty is the normal state. Roles chosen in the Exclude roles dropdown are left out.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3160,7 +3160,7 @@
             "uid": "postgresql"
           },
           "rawQuery": true,
-          "rawSql": "SELECT pid, usename AS role, COALESCE(NULLIF(application_name, ''), '-') AS app, COALESCE(host(client_addr), 'local') AS client, state, COALESCE(wait_event_type || ':' || wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS age_s, left(regexp_replace(query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity WHERE backend_type = 'client backend' AND state <> 'idle' AND pid <> pg_backend_pid() AND now() - query_start > interval '2 seconds' ORDER BY query_start",
+          "rawSql": "SELECT pid, usename AS role, COALESCE(NULLIF(application_name, ''), '-') AS app, COALESCE(host(client_addr), 'local') AS client, state, COALESCE(wait_event_type || ':' || wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - query_start))::numeric, 1) AS age_s, left(regexp_replace(query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity WHERE backend_type = 'client backend' AND state <> 'idle' AND pid <> pg_backend_pid() AND now() - query_start > interval '2 seconds' AND NOT (usename::text = ANY (ARRAY[${exclude:sqlstring}]::text[])) ORDER BY query_start",
           "refId": "A",
           "format": "table"
         }
@@ -3173,7 +3173,7 @@
         "type": "postgres",
         "uid": "postgresql"
       },
-      "description": "Sessions waiting on a lock held by another session (pg_blocking_pids). blocked_by lists the holder pids; find them in the panel above. Empty is the normal state.",
+      "description": "Sessions waiting on a lock held by another session (pg_blocking_pids). blocked_by lists the holder pids; find them in the panel above. Empty is the normal state. Roles chosen in the Exclude roles dropdown are left out.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3303,7 +3303,7 @@
             "uid": "postgresql"
           },
           "rawQuery": true,
-          "rawSql": "SELECT a.pid, array_to_string(pg_blocking_pids(a.pid), ',') AS blocked_by, a.usename AS role, COALESCE(a.wait_event_type || ':' || a.wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - a.query_start))::numeric, 1) AS age_s, left(regexp_replace(a.query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity a WHERE cardinality(pg_blocking_pids(a.pid)) > 0 ORDER BY a.query_start",
+          "rawSql": "SELECT a.pid, array_to_string(pg_blocking_pids(a.pid), ',') AS blocked_by, a.usename AS role, COALESCE(a.wait_event_type || ':' || a.wait_event, '-') AS wait, round(EXTRACT(EPOCH FROM (now() - a.query_start))::numeric, 1) AS age_s, left(regexp_replace(a.query, '\\s+', ' ', 'g'), 120) AS query FROM pg_stat_activity a WHERE cardinality(pg_blocking_pids(a.pid)) > 0 AND NOT (a.usename::text = ANY (ARRAY[${exclude:sqlstring}]::text[])) ORDER BY a.query_start",
           "refId": "A",
           "format": "table"
         }
