@@ -6,7 +6,7 @@
     "monitoring",
     "database"
   ],
-  "description": "What queries were made, how long they took, and what resources the database is using. Source: postgres-exporter (Prometheus) plus pg_stat_statements via the PostgreSQL datasource.",
+  "description": "What queries were made, how long they took, and what resources the database is using, from postgres-exporter (Prometheus) over the selected time range, plus the point-in-time SQL diagnostics that used to be the DB Query Performance and DB Size & Retention dashboards: live activity, sizes and retention, indexes, statistics health. Rows 5 to 7 are collapsed and run no queries until opened. How to read it: docs/postgres-query-performance.md.",
   "editable": true,
   "graphTooltip": 1,
   "schemaVersion": 38,
