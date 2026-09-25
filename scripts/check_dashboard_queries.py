@@ -20,6 +20,12 @@ Only dashboards without template variables are fully checkable.
 
 Postgres only: every target must use the provisioned `postgresql` datasource, so a
 Prometheus dashboard reports every target as a datasource error.
+
+Status (September 2026): the two boards this was written for, DB Query Performance and
+DB Size & Retention, have been folded into the PostgreSQL dashboard, which has template
+variables and Prometheus panels. No provisioned dashboard currently satisfies the two
+limitations above, so this script checks nothing in the repo as it stands. See docs/todo.md,
+"Dashboard query checker", for what it would take to make it general, or to delete it.
 """
 
 import base64

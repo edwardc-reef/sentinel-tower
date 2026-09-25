@@ -71,6 +71,26 @@ Then add "slow statements over time" panels to the dashboard.
 
 **Why deferred:** it is app code plus a migration, and the cancelled queries it would have caught are one known external dashboard that can be fixed directly.
 
+## PostgreSQL dashboard: replace the read-wait SQL tile, fix the retention panel's cost
+
+Two follow-ups from folding DB Size & Retention into the PostgreSQL dashboard (September 2026).
+
+**Read-wait tile.** "Read wait, share of active time" was copied from DB Query Performance as is: a SQL tile, cumulative since the stats reset, next to 5-minute Prometheus tiles.
+A share cannot be rebuilt from `pg_stat_statements`: parallel workers add their read waits to a statement while its execution time stays the leader's wall clock, so on a quiet database the ratio exceeds 100 % (221 % on a dev box, from one parallel `MIN(created_at)` scan).
+**Action:** replace it with a Prometheus tile "Waiting on disk reads", `sum(rate(pg_stat_statements_block_read_seconds_total[5m]))`, processes waiting at any instant, absolute thresholds (yellow above 1, red above the core count). If a percentage is wanted, derive it from `pg_stat_database` (`blk_read_time` over `active_time`), which counts workers consistently; check first that the exporter publishes `active_time`.
+
+**Retention panel cost.** "Retention focus (per major table)" finds the oldest row of four tables with `MIN(created_at)`; without an index on those columns each run is a parallel sequential scan, about 16 s on a 10 GB dev database.
+It was harmless on DB Size & Retention, which refreshed every 5 minutes, but the PostgreSQL dashboard refreshes every minute.
+**Action:** one of: an index on each `created_at`/`timestamp`/`finished_at` column used, a cheaper source for the oldest row, or a per-panel interval of 1 h or more so it stops following the board's refresh. Decide before the move is deployed.
+
+## Dashboard query checker: generalise or delete
+
+`scripts/check_dashboard_queries.py` runs a dashboard's SQL through Grafana's query API, but only for boards with no template variables and only `postgresql` targets.
+The two boards it was written for were folded into the PostgreSQL dashboard in September 2026, which has both variables and Prometheus panels, so it currently checks nothing in the repo.
+
+**Action:** either extend it or delete it. Extending needs three changes: send each target to its own datasource (`expr` + `instant` for Prometheus, `rawSql` + `format` for Postgres) instead of asserting `postgresql`; substitute dashboard variables from each variable's `current` value in the file, rendering `$var` and `${var}` as a regex alternation for PromQL and `${var:sqlstring}` as a quoted list for SQL, plus `$__range` as `1h`; and accept a directory so one run covers every provisioned board.
+It would still not exercise transformations (joins, calculated columns, ordering), which is where the September 2026 breakages were, and it has no place to run: wire it into the nox lint session or the deploy notes, or it will not be run.
+
 ## Rewrite the APY-epoch reconcile DELETE to drive from the snapshot id range
 
 `_RECONCILE_TEMPLATE` in `apps/metagraph/services/apy_epoch_ingest.py` runs every 15 minutes at 65 to 80 s, reads 2.1 M buffers and deleted 0 rows in every run inspected on 2026-09-02.
