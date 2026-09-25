@@ -3296,7 +3296,7 @@
       "type": "table"
     },
     {
-      "collapsed": false,
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3304,448 +3304,449 @@
         "y": 108
       },
       "id": 34,
-      "panels": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Top 20 tables by total size (heap + indexes + toast). est_rows is from planner statistics (pg_class.reltuples) and is refreshed by autovacuum/ANALYZE.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 320
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "heap"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "indexes"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "toast"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "est_rows"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 140
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 109
+          },
+          "id": 41,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT n.nspname || '.' || c.relname AS \"table\", pg_size_pretty(pg_total_relation_size(c.oid)) AS total, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty(pg_indexes_size(c.oid)) AS indexes, pg_size_pretty(COALESCE(pg_total_relation_size(c.reltoastrelid),0)) AS toast, to_char(c.reltuples, 'FM999,999,999,999') AS est_rows FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','m') AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 20",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Top 20 tables by total size",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Per-table row count, heap size, and average bytes per row. Avg bytes per row separates 'big because of row count' from 'big because of wide rows / TOAST'. est_rows is the planner estimate (pg_class.reltuples).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 320
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "heap"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "est_rows"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 160
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "avg_bytes_per_row"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 160
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 119
+          },
+          "id": 35,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT n.nspname || '.' || c.relname AS \"table\", to_char(c.reltuples, 'FM999,999,999,999') AS est_rows, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty((pg_relation_size(c.oid) / NULLIF(c.reltuples, 0))::bigint) AS avg_bytes_per_row FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_relation_size(c.oid) DESC LIMIT 30",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Rows / bytes-per-row / size (all tables)",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "For each major time-stamped table: how long have we been collecting (age_days), how big has the table become, and the implied average growth rate. Assumes roughly linear growth from oldest record to now \u2014 a useful sanity check, not a forecast. To track actual growth over time, see docs/todo.md \u2192 'Add postgres_exporter for time-series DB observability'.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 280
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "oldest"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 200
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "age_days"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total_size"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 120
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "mb_per_day"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "decmbytes"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 130
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "mb_per_year_projected"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "decmbytes"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 180
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 131
+          },
+          "id": 36,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "WITH per_table(label, tname, oldest) AS (VALUES ('extrinsics','extrinsics',(SELECT MIN(created_at) FROM extrinsics)), ('metagraph_block','metagraph_block',(SELECT MIN(timestamp) FROM metagraph_block)), ('metagraph_dump','metagraph_dump',(SELECT MIN(finished_at) FROM metagraph_dump WHERE finished_at IS NOT NULL)), ('subnet_hyperparam_history','subnet_hyperparam_history',(SELECT MIN(created_at) FROM subnet_hyperparam_history))) SELECT pt.label AS \"table\", EXTRACT(EPOCH FROM pt.oldest) * 1000 AS oldest, (EXTRACT(EPOCH FROM (now() - pt.oldest)) / 86400)::int AS age_days, pg_size_pretty(pg_total_relation_size(format('public.%I', pt.tname)::regclass)) AS total_size, round(pg_total_relation_size(format('public.%I', pt.tname)::regclass)::numeric / NULLIF(EXTRACT(EPOCH FROM (now() - pt.oldest))/86400, 0) / 1024 / 1024, 2) AS mb_per_day, round(pg_total_relation_size(format('public.%I', pt.tname)::regclass)::numeric / NULLIF(EXTRACT(EPOCH FROM (now() - pt.oldest))/86400, 0) / 1024 / 1024 * 365, 0) AS mb_per_year_projected FROM per_table pt WHERE pt.oldest IS NOT NULL ORDER BY pg_total_relation_size(format('public.%I', pt.tname)::regclass) DESC",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Retention focus (per major table)",
+          "type": "table"
+        }
+      ],
       "title": "5. Size and retention",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Top 20 tables by total size (heap + indexes + toast). est_rows is from planner statistics (pg_class.reltuples) and is refreshed by autovacuum/ANALYZE.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 320
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 110
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "heap"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "indexes"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "toast"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "est_rows"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 140
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 109
-      },
-      "id": 41,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT n.nspname || '.' || c.relname AS \"table\", pg_size_pretty(pg_total_relation_size(c.oid)) AS total, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty(pg_indexes_size(c.oid)) AS indexes, pg_size_pretty(COALESCE(pg_total_relation_size(c.reltoastrelid),0)) AS toast, to_char(c.reltuples, 'FM999,999,999,999') AS est_rows FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','m') AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 20",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Top 20 tables by total size",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Per-table row count, heap size, and average bytes per row. Avg bytes per row separates 'big because of row count' from 'big because of wide rows / TOAST'. est_rows is the planner estimate (pg_class.reltuples).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 320
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "heap"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "custom.width",
-                "value": 110
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "est_rows"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 160
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "avg_bytes_per_row"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 160
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 119
-      },
-      "id": 35,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT n.nspname || '.' || c.relname AS \"table\", to_char(c.reltuples, 'FM999,999,999,999') AS est_rows, pg_size_pretty(pg_relation_size(c.oid)) AS heap, pg_size_pretty((pg_relation_size(c.oid) / NULLIF(c.reltuples, 0))::bigint) AS avg_bytes_per_row FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_relation_size(c.oid) DESC LIMIT 30",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Rows / bytes-per-row / size (all tables)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "For each major time-stamped table: how long have we been collecting (age_days), how big has the table become, and the implied average growth rate. Assumes roughly linear growth from oldest record to now \u2014 a useful sanity check, not a forecast. To track actual growth over time, see docs/todo.md \u2192 'Add postgres_exporter for time-series DB observability'.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 280
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "oldest"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "dateTimeAsIso"
-              },
-              {
-                "id": "custom.width",
-                "value": 200
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "age_days"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "total_size"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "mb_per_day"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "decmbytes"
-              },
-              {
-                "id": "custom.width",
-                "value": 130
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "mb_per_year_projected"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "decmbytes"
-              },
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 131
-      },
-      "id": 36,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "WITH per_table(label, tname, oldest) AS (VALUES ('extrinsics','extrinsics',(SELECT MIN(created_at) FROM extrinsics)), ('metagraph_block','metagraph_block',(SELECT MIN(timestamp) FROM metagraph_block)), ('metagraph_dump','metagraph_dump',(SELECT MIN(finished_at) FROM metagraph_dump WHERE finished_at IS NOT NULL)), ('subnet_hyperparam_history','subnet_hyperparam_history',(SELECT MIN(created_at) FROM subnet_hyperparam_history))) SELECT pt.label AS \"table\", EXTRACT(EPOCH FROM pt.oldest) * 1000 AS oldest, (EXTRACT(EPOCH FROM (now() - pt.oldest)) / 86400)::int AS age_days, pg_size_pretty(pg_total_relation_size(format('public.%I', pt.tname)::regclass)) AS total_size, round(pg_total_relation_size(format('public.%I', pt.tname)::regclass)::numeric / NULLIF(EXTRACT(EPOCH FROM (now() - pt.oldest))/86400, 0) / 1024 / 1024, 2) AS mb_per_day, round(pg_total_relation_size(format('public.%I', pt.tname)::regclass)::numeric / NULLIF(EXTRACT(EPOCH FROM (now() - pt.oldest))/86400, 0) / 1024 / 1024 * 365, 0) AS mb_per_year_projected FROM per_table pt WHERE pt.oldest IS NOT NULL ORDER BY pg_total_relation_size(format('public.%I', pt.tname)::regclass) DESC",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Retention focus (per major table)",
-      "type": "table"
-    },
-    {
-      "collapsed": false,
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3753,849 +3754,850 @@
         "y": 141
       },
       "id": 37,
-      "panels": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Definitive gaps for parent-row deletes and reverse lookups: no valid, non-partial index has the FK columns as its leading key columns. Empty is good. A row whose in_other_index is set means the column is indexed but not as the leading column, or only by a partial index: acceptable while parent_deletes stays 0 and nothing queries by that column alone. On prod the two rows (metagraph_bond and metagraph_weight target_neuron_id) are deliberate drops from migration 0007.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 240
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "columns"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 200
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "references"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 240
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "in_other_index"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 360
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 142
+          },
+          "id": 50,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT c.conrelid::regclass::text AS \"table\", string_agg(a.attname, ',' ORDER BY x.n) AS columns, c.confrelid::regclass::text AS \"references\", pg_relation_size(c.conrelid) AS size, (SELECT string_agg(i.indexrelid::regclass::text, ',') FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey::smallint[] @> c.conkey) AS in_other_index, (SELECT n_tup_del FROM pg_stat_user_tables t WHERE t.relid = c.confrelid) AS parent_deletes FROM pg_constraint c CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS x(attnum, n) JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum WHERE c.contype = 'f' AND NOT EXISTS ( SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indisvalid AND i.indpred IS NULL AND i.indnkeyatts >= cardinality(c.conkey) AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] @> c.conkey AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] <@ c.conkey ) GROUP BY c.conrelid, c.conname, c.confrelid, c.conkey ORDER BY pg_relation_size(c.conrelid) DESC",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Foreign keys without a leading-column index",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Every query the left index serves can use one of covered_by: same access method, operator classes, collations and ordering, and the left index's key columns are a leading prefix of the right one (or an exact duplicate, such as a leftover from an interrupted REINDEX CONCURRENTLY). Unique, primary, partial and expression indexes are never listed as redundant, and invalid indexes never count as cover. Dropping one trades a slightly wider index per lookup for less write amplification and disk. Django creates one automatically per ForeignKey; a unique_together on the same leading column makes it redundant. Prod 2026-09-03: 23 indexes, 8.5 GB.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 240
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "redundant_index"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 420
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "covered_by"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 420
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 149
+          },
+          "id": 51,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT a.indrelid::regclass::text AS \"table\", a.indexrelid::regclass::text AS redundant_index, string_agg(b.indexrelid::regclass::text, ', ' ORDER BY b.indnatts, b.indexrelid::regclass::text) AS covered_by, pg_relation_size(a.indexrelid) AS size, sa.idx_scan FROM pg_index a JOIN pg_index b ON b.indrelid = a.indrelid AND b.indexrelid <> a.indexrelid JOIN pg_class ca ON ca.oid = a.indexrelid JOIN pg_class cb ON cb.oid = b.indexrelid JOIN pg_stat_user_indexes sa ON sa.indexrelid = a.indexrelid WHERE ca.relam = cb.relam AND a.indpred IS NULL AND b.indpred IS NULL AND a.indexprs IS NULL AND b.indexprs IS NULL AND b.indisvalid AND NOT a.indisprimary AND NOT a.indisunique AND b.indnkeyatts >= a.indnkeyatts AND (b.indnatts > a.indnatts OR (b.indnatts = a.indnatts AND (b.indisunique OR a.indexrelid > b.indexrelid))) AND array_to_string((b.indkey::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indkey::smallint[], ',') AND array_to_string((b.indclass::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indclass::oid[], ',') AND array_to_string((b.indoption::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indoption::smallint[], ',') AND array_to_string((b.indcollation::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indcollation::oid[], ',') GROUP BY a.indrelid, a.indexrelid, sa.idx_scan ORDER BY pg_relation_size(a.indexrelid) DESC",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Redundant indexes",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "When the postgres stat counters were last reset (manual reset, restart, or crash). idx_scan = 0 for indexes created after this time means 'truly unused'; before this time it could mean 'we forgot.' As a rule of thumb, don't trust the Unused panel until at least a week after this timestamp.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "dateTimeAsIso"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 157
+          },
+          "id": 38,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT EXTRACT(EPOCH FROM stats_reset) * 1000 AS reset_at FROM pg_stat_database WHERE datname = current_database()",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Stats counters last reset",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Indexes that have never been scanned. Unique and primary-key indexes are excluded \u2014 they enforce constraints even when they have no scan activity. Read with the 'Stats counters last reset' panel above: an idx_scan of 0 only means 'unused' if enough time has passed since the reset.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1048576
+                  },
+                  {
+                    "color": "red",
+                    "value": 104857600
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 12,
+            "x": 0,
+            "y": 161
+          },
+          "id": 39,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": true,
+              "fields": "",
+              "reducer": [
+                "count"
+              ],
+              "show": true
+            },
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT s.schemaname || '.' || s.relname AS \"table\", s.indexrelname AS index, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.idx_scan = 0 AND NOT i.indisunique AND NOT i.indisprimary ORDER BY pg_relation_size(s.indexrelid) DESC",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Unused indexes (idx_scan = 0)",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Indexes that get scanned but are large relative to their usage. A big index with a small scans count is a candidate for review \u2014 either it's overly broad (consider partial / smaller composite), or it serves a rare query that doesn't justify the size.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 268435456
+                        },
+                        {
+                          "color": "red",
+                          "value": 1073741824
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 110
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "scans"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 12,
+            "w": 12,
+            "x": 12,
+            "y": 161
+          },
+          "id": 40,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT s.schemaname || '.' || s.relname AS \"table\", s.indexrelname AS index, s.idx_scan AS scans, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size, s.idx_tup_read, s.idx_tup_fetch FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.idx_scan > 0 AND NOT i.indisunique AND NOT i.indisprimary ORDER BY pg_relation_size(s.indexrelid) DESC LIMIT 30",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Low-scan indexes by size",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Cumulative since the database stats reset. A handful of scans each reading hundreds of millions of rows is the signature of an unindexed dashboard query. Cancelled queries still count here even though they never reach pg_stat_statements. Small lookup tables are filtered out on purpose.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 260
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 173
+          },
+          "id": 52,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT relname AS \"table\", pg_relation_size(relid) AS size, seq_scan, seq_tup_read, round(seq_tup_read::numeric / NULLIF(seq_scan, 0)) AS rows_per_seq_scan, COALESCE(idx_scan, 0) AS idx_scan, round(100.0 * seq_scan / NULLIF(seq_scan + COALESCE(idx_scan, 0), 0), 1) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE pg_relation_size(relid) > 100 * 1024 * 1024 AND seq_scan > 0 ORDER BY seq_tup_read DESC LIMIT 20",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Sequential scans on tables over 100 MB",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "Top 30 indexes by on-disk size. Useful for spotting bloated or over-broad indexes.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 280
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "indexname"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 280
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 100
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 181
+          },
+          "id": 42,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT schemaname || '.' || tablename AS \"table\", indexname, pg_size_pretty(pg_relation_size(format('%I.%I', schemaname, indexname)::regclass)) AS size, LEFT(indexdef, 120) AS definition FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY pg_relation_size(format('%I.%I', schemaname, indexname)::regclass) DESC LIMIT 30",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Top 30 indexes by size",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgresql"
+          },
+          "description": "idx_blks_read counts index pages fetched from outside shared_buffers (OS cache or disk), cumulative since the database stats reset. Cost, not coverage: which indexes are cold. On prod, random-key inserts into the large unique indexes dominate (unique_neuron_block 1.6 TB, unique_bond 1.2 TB at 86 % hit on 2026-09-02).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "table"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 240
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "index"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 360
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "size"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "read_from_disk"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 191
+          },
+          "id": 53,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgresql"
+              },
+              "rawQuery": true,
+              "rawSql": "SELECT s.relname AS \"table\", s.indexrelname AS index, pg_relation_size(s.indexrelid) AS size, s.idx_scan, io.idx_blks_read, round(100.0 * io.idx_blks_hit / NULLIF(io.idx_blks_hit + io.idx_blks_read, 0), 1) AS hit_pct, io.idx_blks_read * current_setting('block_size')::bigint AS read_from_disk FROM pg_stat_user_indexes s JOIN pg_statio_user_indexes io ON io.indexrelid = s.indexrelid WHERE io.idx_blks_read > 0 ORDER BY io.idx_blks_read DESC LIMIT 20",
+              "refId": "A",
+              "format": "table"
+            }
+          ],
+          "title": "Indexes by blocks read from disk",
+          "type": "table"
+        }
+      ],
       "title": "6. Indexes",
       "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Definitive gaps for parent-row deletes and reverse lookups: no valid, non-partial index has the FK columns as its leading key columns. Empty is good. A row whose in_other_index is set means the column is indexed but not as the leading column, or only by a partial index: acceptable while parent_deletes stays 0 and nothing queries by that column alone. On prod the two rows (metagraph_bond and metagraph_weight target_neuron_id) are deliberate drops from migration 0007.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 240
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "columns"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 200
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "references"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 240
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "in_other_index"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 360
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 142
-      },
-      "id": 50,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT c.conrelid::regclass::text AS \"table\", string_agg(a.attname, ',' ORDER BY x.n) AS columns, c.confrelid::regclass::text AS \"references\", pg_relation_size(c.conrelid) AS size, (SELECT string_agg(i.indexrelid::regclass::text, ',') FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey::smallint[] @> c.conkey) AS in_other_index, (SELECT n_tup_del FROM pg_stat_user_tables t WHERE t.relid = c.confrelid) AS parent_deletes FROM pg_constraint c CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS x(attnum, n) JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum WHERE c.contype = 'f' AND NOT EXISTS ( SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indisvalid AND i.indpred IS NULL AND i.indnkeyatts >= cardinality(c.conkey) AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] @> c.conkey AND (i.indkey::smallint[])[0:cardinality(c.conkey) - 1] <@ c.conkey ) GROUP BY c.conrelid, c.conname, c.confrelid, c.conkey ORDER BY pg_relation_size(c.conrelid) DESC",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Foreign keys without a leading-column index",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Every query the left index serves can use one of covered_by: same access method, operator classes, collations and ordering, and the left index's key columns are a leading prefix of the right one (or an exact duplicate, such as a leftover from an interrupted REINDEX CONCURRENTLY). Unique, primary, partial and expression indexes are never listed as redundant, and invalid indexes never count as cover. Dropping one trades a slightly wider index per lookup for less write amplification and disk. Django creates one automatically per ForeignKey; a unique_together on the same leading column makes it redundant. Prod 2026-09-03: 23 indexes, 8.5 GB.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 240
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redundant_index"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 420
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "covered_by"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 420
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 149
-      },
-      "id": 51,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT a.indrelid::regclass::text AS \"table\", a.indexrelid::regclass::text AS redundant_index, string_agg(b.indexrelid::regclass::text, ', ' ORDER BY b.indnatts, b.indexrelid::regclass::text) AS covered_by, pg_relation_size(a.indexrelid) AS size, sa.idx_scan FROM pg_index a JOIN pg_index b ON b.indrelid = a.indrelid AND b.indexrelid <> a.indexrelid JOIN pg_class ca ON ca.oid = a.indexrelid JOIN pg_class cb ON cb.oid = b.indexrelid JOIN pg_stat_user_indexes sa ON sa.indexrelid = a.indexrelid WHERE ca.relam = cb.relam AND a.indpred IS NULL AND b.indpred IS NULL AND a.indexprs IS NULL AND b.indexprs IS NULL AND b.indisvalid AND NOT a.indisprimary AND NOT a.indisunique AND b.indnkeyatts >= a.indnkeyatts AND (b.indnatts > a.indnatts OR (b.indnatts = a.indnatts AND (b.indisunique OR a.indexrelid > b.indexrelid))) AND array_to_string((b.indkey::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indkey::smallint[], ',') AND array_to_string((b.indclass::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indclass::oid[], ',') AND array_to_string((b.indoption::smallint[])[0:a.indnatts - 1], ',') = array_to_string(a.indoption::smallint[], ',') AND array_to_string((b.indcollation::oid[])[0:a.indnatts - 1], ',') = array_to_string(a.indcollation::oid[], ',') GROUP BY a.indrelid, a.indexrelid, sa.idx_scan ORDER BY pg_relation_size(a.indexrelid) DESC",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Redundant indexes",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "When the postgres stat counters were last reset (manual reset, restart, or crash). idx_scan = 0 for indexes created after this time means 'truly unused'; before this time it could mean 'we forgot.' As a rule of thumb, don't trust the Unused panel until at least a week after this timestamp.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "dateTimeAsIso"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 157
-      },
-      "id": 38,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM stats_reset) * 1000 AS reset_at FROM pg_stat_database WHERE datname = current_database()",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Stats counters last reset",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Indexes that have never been scanned. Unique and primary-key indexes are excluded \u2014 they enforce constraints even when they have no scan activity. Read with the 'Stats counters last reset' panel above: an idx_scan of 0 only means 'unused' if enough time has passed since the reset.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1048576
-              },
-              {
-                "color": "red",
-                "value": 104857600
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "custom.width",
-                "value": 110
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 161
-      },
-      "id": 39,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": true,
-          "fields": "",
-          "reducer": [
-            "count"
-          ],
-          "show": true
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT s.schemaname || '.' || s.relname AS \"table\", s.indexrelname AS index, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.idx_scan = 0 AND NOT i.indisunique AND NOT i.indisprimary ORDER BY pg_relation_size(s.indexrelid) DESC",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Unused indexes (idx_scan = 0)",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Indexes that get scanned but are large relative to their usage. A big index with a small scans count is a candidate for review \u2014 either it's overly broad (consider partial / smaller composite), or it serves a rare query that doesn't justify the size.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 268435456
-                    },
-                    {
-                      "color": "red",
-                      "value": 1073741824
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "custom.width",
-                "value": 110
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "scans"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 90
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 161
-      },
-      "id": 40,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT s.schemaname || '.' || s.relname AS \"table\", s.indexrelname AS index, s.idx_scan AS scans, pg_size_pretty(pg_relation_size(s.indexrelid)) AS size, s.idx_tup_read, s.idx_tup_fetch FROM pg_stat_user_indexes s JOIN pg_index i ON i.indexrelid = s.indexrelid WHERE s.idx_scan > 0 AND NOT i.indisunique AND NOT i.indisprimary ORDER BY pg_relation_size(s.indexrelid) DESC LIMIT 30",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Low-scan indexes by size",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Cumulative since the database stats reset. A handful of scans each reading hundreds of millions of rows is the signature of an unindexed dashboard query. Cancelled queries still count here even though they never reach pg_stat_statements. Small lookup tables are filtered out on purpose.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 260
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 173
-      },
-      "id": 52,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT relname AS \"table\", pg_relation_size(relid) AS size, seq_scan, seq_tup_read, round(seq_tup_read::numeric / NULLIF(seq_scan, 0)) AS rows_per_seq_scan, COALESCE(idx_scan, 0) AS idx_scan, round(100.0 * seq_scan / NULLIF(seq_scan + COALESCE(idx_scan, 0), 0), 1) AS seq_scan_pct, n_live_tup FROM pg_stat_user_tables WHERE pg_relation_size(relid) > 100 * 1024 * 1024 AND seq_scan > 0 ORDER BY seq_tup_read DESC LIMIT 20",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Sequential scans on tables over 100 MB",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "Top 30 indexes by on-disk size. Useful for spotting bloated or over-broad indexes.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 280
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "indexname"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 280
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 100
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 181
-      },
-      "id": 42,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT schemaname || '.' || tablename AS \"table\", indexname, pg_size_pretty(pg_relation_size(format('%I.%I', schemaname, indexname)::regclass)) AS size, LEFT(indexdef, 120) AS definition FROM pg_indexes WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY pg_relation_size(format('%I.%I', schemaname, indexname)::regclass) DESC LIMIT 30",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Top 30 indexes by size",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "postgresql"
-      },
-      "description": "idx_blks_read counts index pages fetched from outside shared_buffers (OS cache or disk), cumulative since the database stats reset. Cost, not coverage: which indexes are cold. On prod, random-key inserts into the large unique indexes dominate (unique_neuron_block 1.6 TB, unique_bond 1.2 TB at 86 % hit on 2026-09-02).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "table"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 240
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "index"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 360
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "size"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "read_from_disk"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "bytes"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 191
-      },
-      "id": 53,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": []
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "postgresql"
-          },
-          "rawQuery": true,
-          "rawSql": "SELECT s.relname AS \"table\", s.indexrelname AS index, pg_relation_size(s.indexrelid) AS size, s.idx_scan, io.idx_blks_read, round(100.0 * io.idx_blks_hit / NULLIF(io.idx_blks_hit + io.idx_blks_read, 0), 1) AS hit_pct, io.idx_blks_read * current_setting('block_size')::bigint AS read_from_disk FROM pg_stat_user_indexes s JOIN pg_statio_user_indexes io ON io.indexrelid = s.indexrelid WHERE io.idx_blks_read > 0 ORDER BY io.idx_blks_read DESC LIMIT 20",
-          "refId": "A",
-          "format": "table"
-        }
-      ],
-      "title": "Indexes by blocks read from disk",
-      "type": "table"
     },
     {
       "id": 45,
