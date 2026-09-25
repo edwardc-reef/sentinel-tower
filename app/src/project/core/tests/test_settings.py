@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Generator
+from datetime import timedelta
 from importlib import import_module
 
 import pytest
@@ -49,6 +50,28 @@ def test__settings__celery_beat_schedule(settings):
 
         if not hasattr(module, task_name):
             pytest.fail(f"The task '{task_name}' does not exist in {module_path}")
+
+
+def test__settings__celery_beat_entries_expire_before_the_next_one_is_due(settings):
+    """Every periodic tick must be discarded once its successor is due.
+
+    Without `expires`, a worker that stops consuming turns the broker into a
+    replay buffer: on 2026-09-16 a restarted worker found ~9 days of queued
+    ticks (1006 messages) and ran them back to back, pinning the database disk
+    at 90% for a day. An expired tick is dropped instead, so a recovered
+    worker does at most one run per entry.
+    """
+    assert settings.CELERY_BEAT_SCHEDULE, "no beat entries to check"
+    for name, entry in settings.CELERY_BEAT_SCHEDULE.items():
+        expires = entry.get("options", {}).get("expires")
+        assert expires is not None, f"beat entry {name!r} has no options.expires"
+
+        schedule = entry["schedule"]
+        # crontab() schedules carry no interval; every one here is daily.
+        interval_seconds = schedule.total_seconds() if isinstance(schedule, timedelta) else 24 * 60 * 60
+        assert 0 < expires < interval_seconds, (
+            f"beat entry {name!r} expires after {expires}s, which is not inside its {interval_seconds}s interval"
+        )
 
 
 def test__settings__structlog_exceptions_reach_sentry_with_stacktrace(sentry_events):

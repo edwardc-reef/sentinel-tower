@@ -149,6 +149,12 @@ CELERY_TASK_ROUTES = {
     "*": {"queue": "celery"},
 }
 CELERY_TASK_TIME_LIMIT = int(timedelta(minutes=5).total_seconds())
+# Every entry carries an `expires` shorter than its own interval. These tasks
+# each recompute current state, so a tick that waited longer than that is
+# redundant with the one behind it. Without the guard the broker becomes a
+# replay buffer: on 2026-09-16 a worker that had stopped consuming left ~9 days
+# of ticks queued (1006 messages), and the restarted worker ran them back to
+# back, holding the database disk at 90% for a day.
 CELERY_BEAT_SCHEDULE = {
     "ingest-validator-apy-epochs": {
         "task": "apps.metagraph.tasks.ingest_validator_apy_epochs",
@@ -156,14 +162,21 @@ CELERY_BEAT_SCHEDULE = {
         # overlap, so the 15-min cadence is cheap (the old full MV refresh
         # was hourly only because it burned ~3 min of CPU per run).
         "schedule": timedelta(minutes=15),
+        # Leaves room for a tick to queue behind a slow predecessor while
+        # still expiring before the next one is due.
+        "options": {"expires": int(timedelta(minutes=13).total_seconds())},
     },
     "update-snapshot-health-metrics": {
         "task": "apps.metagraph.tasks.update_snapshot_health_metrics",
         "schedule": timedelta(minutes=72),
+        "options": {"expires": int(timedelta(minutes=60).total_seconds())},
     },
     "cleanup-expired-data": {
         "task": "project.core.tasks.cleanup_expired_data",
         "schedule": crontab(hour=3, minute=30),  # daily, low-traffic UTC hour
+        # Retention is not time-critical: if the worker was down all morning,
+        # skip the run and let tomorrow's tick catch up.
+        "options": {"expires": int(timedelta(hours=6).total_seconds())},
     },
 }
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER")
