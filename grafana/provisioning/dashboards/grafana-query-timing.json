@@ -20,7 +20,22 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "database"
+      ],
+      "targetBlank": false,
+      "title": "Database dashboards",
+      "tooltip": "Every dashboard tagged database",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "panels": [
     {
       "id": 1,
@@ -58,7 +73,7 @@
               "type": "value",
               "options": {
                 "0": {
-                  "text": "NOT SCRAPED — Prometheus has no Grafana metrics; check the grafana scrape job and reload Prometheus (see panel info)",
+                  "text": "NOT SCRAPED \u2014 Prometheus has no Grafana metrics; check the grafana scrape job and reload Prometheus (see panel info)",
                   "color": "red",
                   "index": 0
                 }
@@ -70,14 +85,14 @@
                 "from": 1,
                 "to": 1000,
                 "result": {
-                  "text": "OK — Grafana metrics are being scraped",
+                  "text": "OK \u2014 Grafana metrics are being scraped",
                   "color": "green",
                   "index": 1
                 }
               }
             }
           ],
-          "noValue": "NOT SCRAPED — no Grafana metrics in Prometheus"
+          "noValue": "NOT SCRAPED \u2014 no Grafana metrics in Prometheus"
         },
         "overrides": []
       },
@@ -1273,7 +1288,8 @@
   "schemaVersion": 38,
   "tags": [
     "grafana",
-    "performance"
+    "performance",
+    "database"
   ],
   "templating": {
     "list": [

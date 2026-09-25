@@ -137,7 +137,7 @@ After the first restart with `pg_stat_statements.track_utility=off`, reset the s
 docker compose exec db psql -U postgres -d project -c 'SELECT pg_stat_statements_reset();'
 ```
 
-The `pg_stat_statements health` panel on the DB Query Performance dashboard should then show `savepoint_pct` at 0 and `evictions` at 0.
+The `pg_stat_statements health` panel on the PostgreSQL dashboard (row 7) should then show `savepoint_pct` at 0 and `evictions` at 0.
 A slow climb of `evictions` months later is the churn of one-off DDL and refresh internals, not the savepoint problem returning; a second reset clears it.
 That panel reads `pg_stat_statements_info`, which exists from extension version 1.9; an extension created at 1.8 on a PG14 binary needs a one-time `ALTER EXTENSION pg_stat_statements UPDATE;` (prod is already at 1.9).
 
@@ -173,7 +173,7 @@ docker compose run --rm db postgres -c shared_preload_libraries=pg_stat_statemen
 
 ## What to look at afterwards
 
-Open the **DB Query Performance** Grafana dashboard (`grafana/provisioning/dashboards/db-query-performance.json`).
+Open the **PostgreSQL** Grafana dashboard (`grafana/provisioning/dashboards/postgres.json`).
 How to read it, the log recipes for cancelled statements and plans, and the 2026-09-02 findings are in [postgres-query-performance.md](postgres-query-performance.md).
 
 ## Known constraints

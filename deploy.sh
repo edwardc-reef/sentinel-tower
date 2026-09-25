@@ -50,6 +50,10 @@ if [ -n "$SERVICES" ]; then
     docker compose up -d $SERVICES
 fi
 
+# nginx resolves upstream container names once at config load; containers
+# recreated above (grafana, postgres-exporter, …) get new IPs, so re-resolve
+docker compose exec nginx nginx -s reload || true
+
 echo "Deploy done. If this release contains migrations, apply them now with:"
 echo "  docker compose run --rm app sh -c 'unset PROMETHEUS_MULTIPROC_DIR PROMETHEUS_USE_FLOCK; python manage.py wait_for_database --timeout 10 && python manage.py migrate'"
 

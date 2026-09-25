@@ -1,41 +1,49 @@
 # PostgreSQL query performance
 
-Where query-performance data lives, how to read the **DB Query Performance** Grafana dashboard, the log recipes for what the dashboard cannot show, and the findings of the first analysis on 2026-09-02.
+Where query-performance data lives, how to read the query and diagnostic rows of the **PostgreSQL** Grafana dashboard, the log recipes for what the dashboard cannot show, and the findings of the first analysis on 2026-09-02.
 Companion to [postgres-tuning.md](postgres-tuning.md), which documents the server settings themselves.
+
+The panels described here were built for the DB Query Performance dashboard (September 2026) and moved, unchanged, onto the PostgreSQL dashboard, `grafana/provisioning/dashboards/postgres.json`, in the same month, alongside its Prometheus panels from postgres-exporter.
 
 ## Where the data lives
 
 | Source | Shows | Cannot show |
 |---|---|---|
-| `pg_stat_statements` (dashboard row *Statement statistics*) | Cumulative cost per statement shape since the last reset: calls, time, I/O wait, temp spill | Statements that never completed (cancelled by a Grafana timeout), entries evicted from the 50,000-slot table, *when* something was slow |
-| `pg_stat_activity` (row *Right now*) | What is running or blocked at this instant, with role and application name | History |
-| `pg_stat_database`, `pg_stat_bgwriter`, catalog (rows *Database & statistics health* and *Indexes*) | Cache hit ratio, read-wait share, checkpoint pressure, index coverage and redundancy | Per-statement attribution |
+| postgres-exporter metrics in Prometheus (Overview and rows 1 to 3) | Per-statement calls, time and rows over the selected time range, per-role rates and latency, instance health, all with history | Statement text (joined from `pg_stat_statements`), max and stddev per statement, anything the exporter's top-300 cut leaves out |
+| `pg_stat_statements` (rows 2, 3 and 7) | Cumulative cost per statement shape since the last reset: I/O wait, temp spill, table fill | Statements that never completed (cancelled by a Grafana timeout), entries evicted from the 50,000-slot table, *when* something was slow |
+| `pg_stat_activity` (row 4, *Right now*) | What is running or blocked at this instant, with role and application name | History |
+| `pg_stat_database`, `pg_stat_bgwriter`, catalog (rows 5 to 7) | Sizes, retention, index coverage and redundancy, checkpoint pressure | Per-statement attribution |
 | Postgres log (journald on the host, shipped to Loki by Alloy) | Every statement over 2 s with its text, every plan over 5 s with buffer counts, cancels, lock waits, temp files | Aggregates |
 
-The dashboard is `grafana/provisioning/dashboards/db-query-performance.json`.
-It is provisioned on the on-box Grafana and can be imported into the external one; there the datasource role needs `pg_read_all_stats` to see other roles' statement text.
-After editing a dashboard that uses neither template variables nor `${__from}`/`${__to}` (this one and DB Size & Retention), run `python3 scripts/check_dashboard_queries.py grafana/provisioning/dashboards/<file>.json` against a local Grafana (`docker compose up -d db` then `docker compose up -d --no-deps grafana`) to execute every panel query through the provisioned datasource.
+The dashboard is provisioned on the on-box Grafana.
+Its SQL panels can be imported into the external Grafana; there the datasource role needs `pg_read_all_stats` to see other roles' statement text.
+Rows 5 to 7 are collapsed by default: Grafana runs no queries for a collapsed row, so their catalog scans cost nothing until someone opens them.
+The **Exclude roles** dropdown (default `postgres_exporter`) leaves the chosen roles out of every table that ranks statements or lists sessions; tiles that count the whole server ignore it.
 
 ## Reading the dashboard
 
-**Right now.**
+**1. What queries were made.**
+Three top-20 tables from the exporter, ranked by total time, by mean time (at least 5 calls) and by calls, each over the selected time range, so "what was slow in the last hour" is answerable.
+`rows per call` of 0 on a SELECT is a lookup that finds nothing, usually a `get_or_create` / `update_or_create` probe that could be a bulk operation.
+Statement text is joined from `pg_stat_statements` with placeholders; parameter-count variants of one Django query (`bulk_create` batches, `IN` lists) appear as separate rows here, unlike the two since-reset tables below.
+
+**2 and 3. I/O read time and temp written.**
+Two since-reset tables from `pg_stat_statements`, grouped so that parameter-count variants land on one row.
+Transaction-control and session-setting statements and the dashboards' own catalog queries are excluded; on prod, `track_utility=off` also hides DDL, `VACUUM` and `REFRESH MATERIALIZED VIEW`, which still reach the slow log.
+Two caveats apply: entries can be evicted when the table is full, and a statement that was cancelled before it finished is never recorded.
+The second caveat is why the worst prod offenders on 2026-09-02 did not appear in `pg_stat_statements` at all; use the log recipes below, or the Postgres Slow Statements dashboard, for those.
+
+**4. Right now.**
 Backend counts, statements running longer than 2 s, and sessions blocked on a lock.
 Both tables are normally empty.
 Idle-in-transaction sessions are listed on purpose: they hold locks and block vacuum, and `age_s` for them is time since their last statement.
 
-**Statement statistics.**
-Five top-20 tables from `pg_stat_statements`, grouped so that parameter-count variants of one Django query (`bulk_create` batches, `IN` lists) land on one row.
-Transaction-control and session-setting statements and this dashboard's own catalog queries are excluded (DB Size & Retention's catalog queries can still appear); on prod, `track_utility=off` also hides DDL, `VACUUM` and `REFRESH MATERIALIZED VIEW`, which still reach the slow log.
-`s_per_day` and `calls_per_day` divide by days since the `pg_stat_statements` reset, so numbers stay comparable across resets.
-Two caveats apply to every panel here: entries can be evicted when the table is full, and a statement that was cancelled before it finished is never recorded.
-The second caveat is why the worst prod offenders on 2026-09-02 did not appear here at all; use the log recipes below for those.
-
-**Database & statistics health.**
-Cache hit ratio and read-wait share say whether slowness is memory-bound; the `io_timing` tile shows whether `track_io_timing` is on at all.
+**7. Statistics health, since reset.**
 Checkpoints and buffers repeat the two counters that drove the August 2026 tuning.
-`pg_stat_statements health` says whether the statistics row can be trusted: `fill_pct` near 100 plus growing evictions means rare statements are being dropped, and `savepoint_pct` above 0 means `track_utility` is still on.
+`pg_stat_statements health` says whether the statement statistics can be trusted: `fill_pct` near 100 plus growing evictions means rare statements are being dropped, and `savepoint_pct` above 0 means `track_utility` is still on.
+Cache hit ratio and read-wait share are on the Overview; `track_io_timing` is on in every environment's compose file.
 
-**Indexes.**
+**6. Indexes.**
 Foreign keys without a leading-column index are definitive gaps for parent deletes and reverse lookups; only valid, non-partial indexes count as cover, and `in_other_index` and `parent_deletes` say whether a gap matters.
 Redundant indexes are definitive too: the listed index is a leading prefix of one of `covered_by` with the same access method, operator classes, collations and ordering, or an exact duplicate.
 Sequential scans on tables over 100 MB are candidates, not proof, and cancelled queries still count there.
