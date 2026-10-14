@@ -45,12 +45,20 @@ Issuing a client cert via `db_access_certs/issue-client.sh` only gates *transpor
 
 **Why separate from `issue-client.sh`:** that script runs on a workstation holding the offline CA key; it must not need network access to prod or DB admin credentials. Coupling cert issuance with live-DB role creation mixes two trust domains.
 
-## Add `postgres_exporter` for time-series DB observability
+## Upgrade PostgreSQL to 17+ so `pg_stat_statements` survives Django savepoints
 
-The DB size / index hygiene Grafana dashboard (see [docs/superpowers/specs/](superpowers/specs/) — design pending) is shipping with point-in-time SQL queries only. That answers "what's the state right now" but not "how is it growing." For retention planning we want week-over-week / month-over-month trends per table.
+`pg_stat_statements` (now exported to Prometheus by `postgres-exporter` and shown on the **PostgreSQL** dashboard) is flooded by Django savepoints. The sync daemons call `update_or_create` / `get_or_create` inside the outer `transaction.atomic()` in `apps/metagraph/services/metagraph_sync_service.py`; each of those opens its own savepoint, and Django names them uniquely (`SAVEPOINT "s<thread>_x<n>"`), so every one becomes a distinct `pg_stat_statements` entry. Measured locally: ~200 new entries/minute, 9,670 of 9,730 rows were `SAVEPOINT`/`RELEASE SAVEPOINT`, 58 were real queries, and real queries were being evicted within hours. This is the mechanism behind the 89k evictions/day in [postgres-tuning.md](postgres-tuning.md); raising `pg_stat_statements.max` only delays it.
 
-**Action:** add `prometheuscommunity/postgres-exporter` as a service in `docker-compose.yml`, point Prometheus at it, and extend the dashboard with trended panels (table size over time, row counts over time, growth rate per table). Most of the metrics we want — `pg_table_size_bytes{relname}`, `pg_index_size_bytes{relname}`, `pg_stat_user_tables_n_live_tup` — are exposed by the default config; the rest can be added via a `queries.yaml`.
+Verified against `postgres:{14,16,17,18}-alpine`: 14 and 16 keep one row per savepoint name; **17 and 18 normalise them to a single `savepoint $1` row** (PostgreSQL ≥ 17 ignores the savepoint name when computing the query id).
 
+**Interim workaround (PostgreSQL 14):** `pg_stat_statements.track_utility=off` on the `db` command. Savepoints stop being recorded and real queries stay in the table permanently; `pg_stat_statements.max` can come back down from 50000 (the exporter reads the whole table every scrape, so a smaller table is cheaper). Cost: `REFRESH MATERIALIZED VIEW` and `VACUUM` no longer appear in `pg_stat_statements` — they still appear in the prod slow-query log (`log_min_duration_statement=2000`, `auto_explain`).
+
+**Action:**
+
+1. Plan a major-version upgrade 14 → 17 (`pg_upgrade` or dump/restore of the multi-GB data directory; note that the `postgres` image changes its default `PGDATA` path from 18 on). When done, remove `track_utility=off`.
+2. Until then, expose the APY materialized-view refresh duration directly from `apps/metagraph/tasks.py` (elapsed time on the existing "Refreshed …" log line and a `django-business-metrics` gauge/histogram scraped via `/business-metrics`) so the refresh — historically the DB's most fragile operation — has a first-class metric independent of `pg_stat_statements`.
+
+Alternative that avoids both: rewrite the per-neuron writes as bulk upserts (`bulk_create(update_conflicts=True)`) so no savepoints are emitted. Larger change with different error semantics; not preferred.
 **Why deferred:** the point-in-time dashboard already answers the immediate "which tables/indexes are biggest" question, and adding an exporter is a separate deploy-touching change (new container, new scrape target, secrets). Bundling them would slow the dashboard ship.
 
 ## Sample `pg_stat_activity` into a history table
@@ -62,6 +70,26 @@ On 2026-09-02 that blind spot hid the worst prod offenders: about 190 Grafana pa
 Then add "slow statements over time" panels to the dashboard.
 
 **Why deferred:** it is app code plus a migration, and the cancelled queries it would have caught are one known external dashboard that can be fixed directly.
+
+## PostgreSQL dashboard: replace the read-wait SQL tile, fix the retention panel's cost
+
+Two follow-ups from folding DB Size & Retention into the PostgreSQL dashboard (September 2026).
+
+**Read-wait tile.** "Read wait, share of active time" was copied from DB Query Performance as is: a SQL tile, cumulative since the stats reset, next to 5-minute Prometheus tiles.
+A share cannot be rebuilt from `pg_stat_statements`: parallel workers add their read waits to a statement while its execution time stays the leader's wall clock, so on a quiet database the ratio exceeds 100 % (221 % on a dev box, from one parallel `MIN(created_at)` scan).
+**Action:** replace it with a Prometheus tile "Waiting on disk reads", `sum(rate(pg_stat_statements_block_read_seconds_total[5m]))`, processes waiting at any instant, absolute thresholds (yellow above 1, red above the core count). If a percentage is wanted, derive it from `pg_stat_database` (`blk_read_time` over `active_time`), which counts workers consistently; check first that the exporter publishes `active_time`.
+
+**Retention panel cost.** "Retention focus (per major table)" finds the oldest row of four tables with `MIN(created_at)`; without an index on those columns each run is a parallel sequential scan, about 16 s on a 10 GB dev database.
+It was harmless on DB Size & Retention, which refreshed every 5 minutes, but the PostgreSQL dashboard refreshes every minute.
+**Action:** one of: an index on each `created_at`/`timestamp`/`finished_at` column used, a cheaper source for the oldest row, or a per-panel interval of 1 h or more so it stops following the board's refresh. Decide before the move is deployed.
+
+## Dashboard query checker: generalise or delete
+
+`scripts/check_dashboard_queries.py` runs a dashboard's SQL through Grafana's query API, but only for boards with no template variables and only `postgresql` targets.
+The two boards it was written for were folded into the PostgreSQL dashboard in September 2026, which has both variables and Prometheus panels, so it currently checks nothing in the repo.
+
+**Action:** either extend it or delete it. Extending needs three changes: send each target to its own datasource (`expr` + `instant` for Prometheus, `rawSql` + `format` for Postgres) instead of asserting `postgresql`; substitute dashboard variables from each variable's `current` value in the file, rendering `$var` and `${var}` as a regex alternation for PromQL and `${var:sqlstring}` as a quoted list for SQL, plus `$__range` as `1h`; and accept a directory so one run covers every provisioned board.
+It would still not exercise transformations (joins, calculated columns, ordering), which is where the September 2026 breakages were, and it has no place to run: wire it into the nox lint session or the deploy notes, or it will not be run.
 
 ## Rewrite the APY-epoch reconcile DELETE to drive from the snapshot id range
 

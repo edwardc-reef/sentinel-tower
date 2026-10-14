@@ -15,12 +15,27 @@
       }
     ]
   },
-  "description": "Slow, cancelled and failed Postgres statements with their SQL, from the db container log in Loki, filterable by the Postgres role. Complements DB Query Performance (pg_stat_statements: cumulative, no cancelled statements) and Grafana Query Timing (Grafana-side latency, no query identity).",
+  "description": "Slow, cancelled and failed Postgres statements with their SQL, from the db container log in Loki, filterable by the Postgres role. Complements the PostgreSQL dashboard (pg_stat_statements and postgres-exporter: no cancelled statements) and Grafana Query Timing (Grafana-side latency, no query identity).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "database"
+      ],
+      "targetBlank": false,
+      "title": "Database dashboards",
+      "tooltip": "Every dashboard tagged database",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
   "panels": [
     {
       "id": 1,
@@ -876,7 +891,8 @@
   "tags": [
     "postgres",
     "performance",
-    "loki"
+    "loki",
+    "database"
   ],
   "templating": {
     "list": [

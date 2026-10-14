@@ -2,7 +2,7 @@
 
 Where a Grafana instance spends time answering dashboard queries, split into
 the whole request and the part spent inside the data source plugin, per
-plugin. It is the Grafana-side complement of the DB Query Performance
+plugin. It is the Grafana-side complement of the PostgreSQL
 dashboard: Postgres only records statements that finish, while Grafana records
 every request, including the ones that were cancelled because the client gave
 up.

@@ -6,7 +6,7 @@ selected time range. Provisioned from
 reachable at `/grafana/d/postgres-slow-statements/`.
 
 It fills the two gaps the other performance dashboards leave:
-`pg_stat_statements` (DB Query Performance) is cumulative since its last reset
+`pg_stat_statements` (the PostgreSQL dashboard) is cumulative since its last reset
 and never sees a statement that was cancelled, and Grafana's own metrics
 (Grafana Query Timing) carry no query text at all.
 

@@ -15,9 +15,11 @@ datasources:
     access: proxy
     url: db:5432
     database: $POSTGRES_DB
-    user: $POSTGRES_USER
+    # read-only role with statement_timeout and application_name=grafana, so dashboard
+    # load is attributable separately from the sync daemons (see docs/README.md, "Database roles")
+    user: $GRAFANA_READER_USER
     secureJsonData:
-      password: $POSTGRES_PASSWORD
+      password: $GRAFANA_READER_PASSWORD
     jsonData:
       sslmode: disable
       maxOpenConns: 5

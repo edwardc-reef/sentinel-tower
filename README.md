@@ -27,8 +27,8 @@ $ ./setup-dev.sh
 $ docker compose up -d
 ```
 
-The dev database preloads `pg_stat_statements` for the DB Query Performance dashboard.
-A fresh volume gets the extension from `envs/dev/db-init/`; an existing volume needs it once, after `docker compose up -d` has recreated the `db` container:
+The dev database preloads `pg_stat_statements` for the PostgreSQL dashboard.
+A fresh volume gets the extension from `db/init/`; an existing volume needs it once, after `docker compose up -d` has recreated the `db` container:
 ```bash
 $ docker compose exec db psql -U postgres -d project -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
 ```
